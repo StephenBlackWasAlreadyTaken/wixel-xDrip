@@ -1,1 +1,0 @@
-APP_LIBS += i2c.lib
