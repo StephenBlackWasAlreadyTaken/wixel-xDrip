@@ -23,10 +23,12 @@ apps/*/*
 *.rst
 *.sym
 *.wxl
-
 # Ignore eclipse files
 .cproject
 .project
+
+# Ignore silly mac files
+*.DS_Store
 
 /docs
 
