@@ -29,7 +29,6 @@ radio_channel: See description in radio_link.h.
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
-#include <uart0.h>
 #include <uart1.h>
 #include <gpio.h>
 
@@ -257,10 +256,10 @@ uint8 getPacketPassedChecksum(Dexcom_packet* p)
 
 void openUart()
 {
-    uart0Init();
-    uart0SetBaudRate(9600);
-    uart0SetParity(0);
-    uart0SetStopBits(1);
+    uart1Init();
+    uart1SetBaudRate(9600);
+    uart1SetParity(PARITY_NONE);
+    uart1SetStopBits(STOP_BITS_1);
 }
 
 /** Functions *****************************************************************/
@@ -368,7 +367,6 @@ void updateLeds()
 // This is called by printf and printPacket.
 void putchar(char c)
 {
-    /*uart1TxSendByte(c); // Send through Uaart*/
     usbComTxSendByte(c);
 }
 
@@ -467,7 +465,9 @@ void print_packet(Dexcom_packet* pPkt)
         while(usbComTxAvailable() < sizeof(Record))
             doServices(0);
         usbComTxSend((const uint8 XDATA*)&Record, sizeof(Record));  //SEND THROUGH USB
-        /*uart1TxSend((const uint8 XDATA *)&rRecord, sizeof(Record));     //SEND THROUGH UART1*/
+        /*while(uart1TxAvailable() < sizeof(Record))*/
+            /*doServices(0);*/
+        /*uart1TxSend((const uint8 XDATA*)&Record, sizeof(Record));     //SEND THROUGH UART1*/
     }
     else
     {
