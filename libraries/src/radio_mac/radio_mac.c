@@ -212,8 +212,11 @@ void radioMacInit()
 
     // MCSM.FS_AUTOCAL = 1: Calibrate freq when going from IDLE to RX or TX (or FSTXON).
     MCSM0 = 0x14;    // Main Radio Control State Machine Configuration
-    MCSM1 = 0x05;    // Disable CCA.  After RX, go to FSTXON.  After TX, go to FSTXON.
-    MCSM2 = 0x07;    // NOTE: MCSM2 also gets set every time we go into RX mode.
+	
+    //MCSM1 = 0x05;    // Disable CCA.  After RX, go to FSTXON.  After TX, go to FSTXON.
+    MCSM1 = 0x3C;    // RX, and stay in RX
+    
+	MCSM2 = 0x07;    // NOTE: MCSM2 also gets set every time we go into RX mode.
 
     IEN2 |= 0x01;    // Enable RF general interrupt
     RFIM = 0xF0;     // Enable these interrupts: DONE, RXOVF, TXUNF, TIMEOUT
