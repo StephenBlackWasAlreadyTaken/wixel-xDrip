@@ -10,7 +10,6 @@
 #include <com.h>
 
 typedef void (HandlerFunction)(void);
-typedef void (*LineStateChangeNotificationFunc)(uint8 state);
 
 /*! This function returns the current state of the virtual
  * RTS and DTR control lines.
@@ -161,5 +160,5 @@ void usbComTxSendByte(uint8 byte);
  * function and be sure not to add too many bytes to the buffer.
  * The \p size parameter should not exceed the last value returned by usbComTxAvailable(). */
 void usbComTxSend(const uint8 XDATA * buffer, uint8 size);
-void usbComRequestLineStateChangeNotification(LineStateChangeNotificationFunc pFunc);
+
 #endif

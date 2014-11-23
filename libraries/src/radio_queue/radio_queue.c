@@ -20,9 +20,13 @@
 #include <radio_registers.h>
 #include <random.h>
 
+
 /* PARAMETERS *****************************************************************/
 
 int32 CODE param_radio_channel = 128;
+
+static int32 channel_number = 0;
+static volatile BIT channel_select = 0;
 
 /* PACKET VARIABLES AND DEFINES ***********************************************/
 
@@ -69,7 +73,10 @@ void radioQueueInit()
     randomSeedFromSerialNumber();
 
     PKTLEN = RADIO_MAX_PACKET_SIZE;
-    CHANNR = param_radio_channel;
+    if (channel_select)
+    {CHANNR = channel_number;}
+    else
+    {CHANNR = param_radio_channel;}
 
     radioMacInit();
     radioMacStrobe();
