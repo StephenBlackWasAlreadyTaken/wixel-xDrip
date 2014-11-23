@@ -37,8 +37,9 @@ radio_channel: See description in radio_link.h.
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //..................SET THESE VARIABLES TO MEET YOUR NEEDS..........................................//
 static volatile BIT usbEnabled = 1;                                                                 //
-static const char transmitter_id[] = "66ENF";                                                       //
+static const char transmitter_id[] = "ABCDE";                                                       //
 static volatile BIT do_close_usb = 1;                                                               //
+static volatile BIT only_listen_for_my_transmitter = 0;                                             //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -287,7 +288,7 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
             if(radioCrcPassed()) {
                 fOffset[channel] += FREQEST;
                 memcpy(pkt, packet, min8(len+2, sizeof(Dexcom_packet)));
-                if(pkt->src_addr == dex_tx_id || dex_tx_id == 0) {
+                if(pkt->src_addr == dex_tx_id || dex_tx_id == 0 || only_listen_for_my_transmitter == 0) {
                     pkt->txId -= channel;
                     txid = (pkt->txId & 0xFC) >> 2;
                     if(txid != lastpktxid) {
