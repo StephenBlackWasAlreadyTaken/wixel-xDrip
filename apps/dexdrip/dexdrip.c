@@ -36,7 +36,7 @@ radio_channel: See description in radio_link.h.
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //..................SET THESE VARIABLES TO MEET YOUR NEEDS..........................................//
-static volatile BIT usbEnabled = 0;                                                                 //
+static volatile BIT usbEnabled = 1;                                                                 //
 static const char transmitter_id[] = "66ENF";                                                       //
 static volatile BIT do_close_usb = 1;                                                               //
 //..................................................................................................//
