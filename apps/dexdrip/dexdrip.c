@@ -189,18 +189,19 @@ ISR (ST, 0) {
     IEN0 &= ~0x20;
     WORIRQ &= ~0x11;
     WORCTRL &= ~0x03;
-    if(do_close_usb) {
+    if(do_close_usb && usbEnabled) {
          usbPoll();
     }
 }
 
 void uartEnable() {
     U1UCR |= 0x40; //CTS/RTS ON
+    delayMs(1000);
 }
 
 void uartDisable() {
     LED_GREEN(1);
-    delayMs(3000);
+    delayMs(2000);
     U1UCR &= ~0x40; //CTS/RTS Off
     LED_GREEN(0);
     U1CSR &= ~0x40; // Recevier disable
@@ -208,27 +209,40 @@ void uartDisable() {
 
 void goToSleep (uint16 seconds) {
     unsigned char temp;
-    IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
-    WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
-    SLEEP |= 0x02;                  // SLEEP.MODE = PM2
+    if(!usbEnabled) {
+        IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
+        WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
-    if(do_close_usb)
-    {
-        SLEEP &= ~(1<<7);
-        disableUsbPullup();
-        usbDeviceState = USB_STATE_DETACHED;
+        /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
+        SLEEP |= 0x01;                  // SLEEP.MODE = PM2
+
+        if(do_close_usb)
+        {
+            SLEEP &= ~(1<<7);
+            disableUsbPullup();
+            usbDeviceState = USB_STATE_DETACHED;
+        }
+
+        WORCTRL |= 0x04;  // Reset
+        temp = WORTIME0;
+        while (temp == WORTIME0) {};
+        temp = WORTIME0;
+        while (temp == WORTIME0) {};
+        WORCTRL |= 0x03; // 2^5 periods
+        WOREVT1 = (seconds >> 8);
+        WOREVT0 = (seconds & 0xff);
+        PCON |= 0x01; // PCON.IDLE = 1;
+    } else {
+        uint32 start = getMs();
+        uint32 end = getMs();
+        while(((end-start)/1000)<seconds) {
+            end = getMs();
+            /*LED_RED( ((getMs()/1000) % 2) == 0 );*/
+            delayMs(100);
+            doServices();
+        }
     }
-
-    WORCTRL |= 0x04;  // Reset
-    temp = WORTIME0;
-    while (temp == WORTIME0) {};
-    temp = WORTIME0;
-    while (temp == WORTIME0) {};
-    WORCTRL |= 0x03; // 2^5 periods
-    WOREVT1 = (seconds >> 8);
-    WOREVT0 = (seconds & 0xff);
-    PCON |= 0x01; // PCON.IDLE = 1;
 }
 
 void putchar(char c) {
@@ -277,20 +291,24 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
     int nRet = 0;
     static uint8 lastpktxid = 64;
     uint8 txid = 0;
-    if(channel >= NUM_CHANNELS)
+    if(channel >= NUM_CHANNELS) {
         return -1;
+    }
     swap_channel(nChannels[channel], fOffset[channel]);
 
     while (!milliseconds || (getMs() - start) < milliseconds) {
         doServices();
         if (packet = radioQueueRxCurrentPacket()) {
             uint8 len = packet[0];
+
             if(radioCrcPassed()) {
                 fOffset[channel] += FREQEST;
                 memcpy(pkt, packet, min8(len+2, sizeof(Dexcom_packet)));
+
                 if(pkt->src_addr == dex_tx_id || dex_tx_id == 0 || only_listen_for_my_transmitter == 0) {
                     pkt->txId -= channel;
                     txid = (pkt->txId & 0xFC) >> 2;
+
                     if(txid != lastpktxid) {
                         nRet = 1;
                         lastpktxid = txid;
@@ -305,7 +323,7 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
 }
 
 int get_packet(Dexcom_packet* pPkt) {
-    int delay = 25;
+    int delay = 0;
     int nChannel = 0;
     for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
         switch(WaitForPacket(delay, pPkt, nChannel)) {
@@ -316,6 +334,7 @@ int get_packet(Dexcom_packet* pPkt) {
         case -1:
             return 0;
         }
+        delay = 500;
     }
     return 0;
 }
@@ -375,12 +394,13 @@ void main() {
         boardService();
         if(!get_packet(&Pkt))
             continue;
+
         print_packet(&Pkt);
 
         RFST = 4;
         delayMs(80);
         doServices();
-        goToSleep(280);
+        goToSleep(270);
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
