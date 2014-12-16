@@ -411,8 +411,6 @@ void timing_setup() {
         LED_GREEN(0);
     //sleep default, then wait on channel 1
         while (initial_wait == 0 || initial_wait > five_minutes){
-            LED_GREEN(1);
-            while(!get_packet_fixed_channel(&Pkt, 0)) {}
             RFST = 4;
             delayMs(80);
             doServices();
@@ -423,10 +421,12 @@ void timing_setup() {
             MCSM1 = 0;
             radioMacStrobe();
 
-            timeInit();
             memset(&Pkt, 0, sizeof(Dexcom_packet));
             boardService();
 
+            timeInit();
+            LED_GREEN(1);
+            while(!get_packet_fixed_channel(&Pkt, 0)) {}
             print_packet(&Pkt);
             LED_GREEN(0);
             initial_wait = getMs();
@@ -453,17 +453,17 @@ void timing_setup() {
             boardService();
             timeInit();
             LED_GREEN(1);
-            while(!get_packet_fixed_channel(&Pkt, 1)) {}
-
+            while(!get_packet_fixed_channel(&Pkt, 3)) {}
             print_packet(&Pkt);
             LED_GREEN(0);
             first_wait_fourth_channel = getMs() + 100;
         }
 
     //Get back into timing for channel 1
-        rest(initial_wait - 1000);
+        rest(initial_wait - 10);
         memset(&Pkt, 0, sizeof(Dexcom_packet));
         boardService();
+        timeInit();
         LED_GREEN(1);
         while(!get_packet_fixed_channel(&Pkt, 0)) {}
         LED_GREEN(0);
@@ -499,11 +499,11 @@ void main() {
         timeInit();
         memset(&Pkt, 0, sizeof(Dexcom_packet));
         boardService();
+        LED_YELLOW(1);
         if(!get_packet(&Pkt, fixed_wait_adder))
             continue;
 
         print_packet(&Pkt);
-        LED_YELLOW(1);
 
         if(getMs() > five_minutes) {
             timing_setup();
