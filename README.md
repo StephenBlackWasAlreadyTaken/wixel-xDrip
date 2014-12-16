@@ -60,7 +60,7 @@ track of their glucose levels in real(ish)time
 ### Why this then?
 The current dexcom has its own proprietary reciever that unfortunately cannot
 talk to phones unless using a project like
-[NightScount](http://www.nightscout.info/) Which is an awesome project I HIGHLY recomend you check out
+[NightScout](http://www.nightscout.info/) Which is an awesome project I HIGHLY recomend you check out
 
 # HUGE PROPS TO:
 Adrien De Croy for writing most of this for his Dexterity Prject!
