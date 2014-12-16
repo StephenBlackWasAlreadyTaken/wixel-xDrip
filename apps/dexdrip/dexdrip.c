@@ -408,7 +408,7 @@ void timing_setup() {
         RFST = 4;
         delayMs(80);
         doServices();
-        goToSleep(220);
+        goToSleep(100);
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
@@ -430,7 +430,7 @@ void timing_setup() {
         RFST = 4;
         delayMs(80);
         doServices();
-        goToSleep(220 + ((initial_wait / 1000) - 2));
+        goToSleep(100 + ((initial_wait / 1000) - 2));
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
@@ -452,7 +452,7 @@ void timing_setup() {
         RFST = 4;
         delayMs(80);
         doServices();
-        goToSleep(220 + ((initial_wait / 1000) - 2));
+        goToSleep(100 + ((initial_wait / 1000) - 2));
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
@@ -473,7 +473,7 @@ void timing_setup() {
         RFST = 4;
         delayMs(80);
         doServices();
-        goToSleep(220 + ((initial_wait / 1000) - 2));
+        goToSleep(100 + ((initial_wait / 1000) - 2));
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
@@ -493,8 +493,8 @@ void timing_setup() {
     second_wait_second_channel = (getMs() % (60000 * 5));
     //set resleep values and default
 
-    fixed_wait_adder = (initial_wait + second_wait)/2;
-    wait_before_channel_switch = (first_wait_second_channel + second_wait_second_channel)/2 - fixed_wait_adder;
+    fixed_wait_adder = (initial_wait + second_wait) / 2;
+    wait_before_channel_switch = (first_wait_second_channel + second_wait_second_channel) / 2 - fixed_wait_adder;
 }
 
 void main() {
@@ -536,7 +536,7 @@ void main() {
         RFST = 4;
         delayMs(80);
         doServices();
-        goToSleep(220 + ((initial_wait / 1000) - 2));
+        goToSleep(100 + ((initial_wait / 1000) - 2));
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
