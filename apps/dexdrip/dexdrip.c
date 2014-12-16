@@ -36,23 +36,31 @@ radio_channel: See description in radio_link.h.
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //..................SET THESE VARIABLES TO MEET YOUR NEEDS..........................................//
+//                           0 = false, 1 = true                                                    //
 static volatile BIT usbEnabled = 1;                                                                 //
-static const char transmitter_id[] = "ABCDE";                                                       //
+static const char XDATA transmitter_id[] = "ABCDE";                                                       //
 static volatile BIT do_close_usb = 1;                                                               //
 static volatile BIT only_listen_for_my_transmitter = 0;                                             //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-extern int32 channel_number = 0;
-static volatile int start_channel = 0;
+extern uint8 channel_number = 0;
+static volatile uint8 XDATA start_channel = 0;
 extern volatile BIT channel_select = 0;
 uint32 asciiToDexcomSrc(char *addr);
 uint32 getSrcValue(char srcVal);
 volatile uint32 dex_tx_id;
 #define NUM_CHANNELS        (4)
-static uint8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
-static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
+static uint8 XDATA fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
+static uint8 XDATA nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
+uint32 XDATA initial_wait;
+uint32 XDATA second_wait;
+uint32 XDATA first_wait_second_channel;
+uint32 XDATA second_wait_second_channel;
+uint16 XDATA wait_before_channel_switch;
+uint16 XDATA fixed_wait_adder;
+
 
 uint8 lookup[16] = {
     0x0, 0x8, 0x4, 0xC,
@@ -177,7 +185,7 @@ void print_packet(Dexcom_packet* pPkt) {
 }
 
 void makeAllOutputs() {
-    int i;
+    uint8 i;
     for (i=0; i < 16; i++) {
         setDigitalOutput(i, LOW);
     }
@@ -196,12 +204,12 @@ ISR (ST, 0) {
 
 void uartEnable() {
     U1UCR |= 0x40; //CTS/RTS ON
-    delayMs(1000);
+    delayMs(500);
 }
 
 void uartDisable() {
     LED_GREEN(1);
-    delayMs(2000);
+    delayMs(500);
     U1UCR &= ~0x40; //CTS/RTS Off
     LED_GREEN(0);
     U1CSR &= ~0x40; // Recevier disable
@@ -214,8 +222,8 @@ void goToSleep (uint16 seconds) {
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
-        /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
-        SLEEP |= 0x01;                  // SLEEP.MODE = PM2
+        SLEEP |= 0x02;                  // SLEEP.MODE = PM2
+        /*SLEEP |= 0x01;                  // SLEEP.MODE = PM2*/
 
         if(do_close_usb)
         {
@@ -238,7 +246,6 @@ void goToSleep (uint16 seconds) {
         uint32 end = getMs();
         while(((end-start)/1000)<seconds) {
             end = getMs();
-            /*LED_RED( ((getMs()/1000) % 2) == 0 );*/
             delayMs(100);
             doServices();
         }
@@ -266,7 +273,7 @@ void toBytes(uint32 n,uint8 bytes[] ) {
 }
 
 void printBytes(uint8 bytes[]) {
-    int j;
+    uint8 j;
     for(j = 0; j < 4; j++) {
         putchar(nibbleToAscii(bytes[j] >> 4));
         putchar(nibbleToAscii(bytes[j]));
@@ -285,15 +292,12 @@ void swap_channel(uint8 channel, uint8 newFSCTRL0)
     RFST = 2;   //RX
 }
 
-int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
+uint8 WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
     uint32 start = getMs();
     uint8 XDATA * packet = 0;
-    int nRet = 0;
+    uint8 nRet = 0;
     static uint8 lastpktxid = 64;
     uint8 txid = 0;
-    if(channel >= NUM_CHANNELS) {
-        return -1;
-    }
     swap_channel(nChannels[channel], fOffset[channel]);
 
     while (!milliseconds || (getMs() - start) < milliseconds) {
@@ -322,32 +326,52 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
     return nRet;
 }
 
-int get_packet(Dexcom_packet* pPkt) {
-    int delay = 0;
-    int nChannel = 0;
+uint8 get_packet(Dexcom_packet* pPkt, uint32 XDATA channel_wait) {
+    uint8 nChannel = 0;
+    uint8 XDATA fixed_channel = 0;
+    uint32 delay = channel_wait + 50;
+
     for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
+        if (fixed_channel == 1) {
+            nChannel = 0;
+            delay = 25;
+            LED_RED(1);
+        }
         switch(WaitForPacket(delay, pPkt, nChannel)) {
         case 1:
             return 1;
         case 0:
+            if (nChannel == 3) {
+                fixed_channel = 1;
+                nChannel = 0;
+            }
             continue;
-        case -1:
-            return 0;
         }
-        delay = 500;
+        if (nChannel == 2) {
+            delay = wait_before_channel_switch - 50;
+        } else {
+            delay = wait_before_channel_switch;
+        }
     }
     return 0;
 }
 
+uint8 get_packet_fixed_channel(Dexcom_packet* pPkt, uint8 nChannel) {
+    while(1) {
+        switch(WaitForPacket(25, pPkt, nChannel)) {
+        case 1:
+            return 1;
+        case 0:
+            continue;
+        }
+    }
+    return 0;
+}
 
 uint8 SetRFParam(unsigned char XDATA* addr, uint8 val) {
     *addr = val;
     return 1;
 }
-
-uint32 countblink=0;
-
-uint32 t = 0x00000000; 
 
 void doServices()
 {
@@ -366,6 +390,111 @@ void configBt() {
     uartEnable();
     printf("AT+NAMEDexDrip2");
     uartDisable();
+}
+
+void timing_setup() {
+    /*7 pass timing setup*/
+    /*first pass, wait on channel 1 for packets*/
+        Dexcom_packet Pkt;
+        memset(&Pkt, 0, sizeof(Dexcom_packet));
+        boardService();
+        LED_GREEN(1);
+        LED_RED(1);
+        while(!get_packet_fixed_channel(&Pkt, 0)) {}
+
+        print_packet(&Pkt);
+        LED_GREEN(0);
+    //sleep default, then wait on channel 1
+        RFST = 4;
+        delayMs(80);
+        doServices();
+        goToSleep(220);
+        USBPOW = 1;
+        USBCIE = 0b0111;
+        radioMacInit();
+        MCSM1 = 0;
+        radioMacStrobe();
+
+    timeInit();
+        /*Dexcom_packet Pkt;*/
+        memset(&Pkt, 0, sizeof(Dexcom_packet));
+        boardService();
+        LED_GREEN(1);
+        while(!get_packet_fixed_channel(&Pkt, 0)) {}
+
+        print_packet(&Pkt);
+        LED_GREEN(0);
+    initial_wait = (getMs() % (60000 * 5));
+
+    //add to default sleep, then wait on channel 1
+        RFST = 4;
+        delayMs(80);
+        doServices();
+        goToSleep(220 + ((initial_wait / 1000) - 2));
+        USBPOW = 1;
+        USBCIE = 0b0111;
+        radioMacInit();
+        MCSM1 = 0;
+        radioMacStrobe();
+
+    timeInit();
+        /*Dexcom_packet Pkt;*/
+        memset(&Pkt, 0, sizeof(Dexcom_packet));
+        boardService();
+        LED_GREEN(1);
+        while(!get_packet_fixed_channel(&Pkt, 0)) {}
+
+        print_packet(&Pkt);
+        LED_GREEN(0);
+    second_wait = (getMs() % (60000 * 5));
+
+    //repeat but listen on channel 2
+        RFST = 4;
+        delayMs(80);
+        doServices();
+        goToSleep(220 + ((initial_wait / 1000) - 2));
+        USBPOW = 1;
+        USBCIE = 0b0111;
+        radioMacInit();
+        MCSM1 = 0;
+        radioMacStrobe();
+
+    timeInit();
+        /*Dexcom_packet Pkt;*/
+        memset(&Pkt, 0, sizeof(Dexcom_packet));
+        boardService();
+        LED_GREEN(1);
+        while(!get_packet_fixed_channel(&Pkt, 1)) {}
+
+        print_packet(&Pkt);
+        LED_GREEN(1);
+    first_wait_second_channel= (getMs() % (60000 * 5));
+    //repeat and compare
+        RFST = 4;
+        delayMs(80);
+        doServices();
+        goToSleep(220 + ((initial_wait / 1000) - 2));
+        USBPOW = 1;
+        USBCIE = 0b0111;
+        radioMacInit();
+        MCSM1 = 0;
+        radioMacStrobe();
+
+    timeInit();
+        /*Dexcom_packet Pkt;*/
+        memset(&Pkt, 0, sizeof(Dexcom_packet));
+        boardService();
+        LED_GREEN(1);
+        while(!get_packet_fixed_channel(&Pkt, 1)) {}
+
+        print_packet(&Pkt);
+        LED_GREEN(0);
+        LED_RED(0);
+    second_wait_second_channel = (getMs() % (60000 * 5));
+    //set resleep values and default
+
+    fixed_wait_adder = (initial_wait + second_wait)/2;
+    wait_before_channel_switch = (first_wait_second_channel + second_wait_second_channel)/2 - fixed_wait_adder;
 }
 
 void main() {
@@ -388,19 +517,26 @@ void main() {
     radioQueueAllowCrcErrors = 1;
     MCSM1 = 0;
 
+    timing_setup();
+
     while(1) {
         Dexcom_packet Pkt;
+        timeInit();
         memset(&Pkt, 0, sizeof(Dexcom_packet));
         boardService();
-        if(!get_packet(&Pkt))
+        if(!get_packet(&Pkt, fixed_wait_adder))
             continue;
 
         print_packet(&Pkt);
 
+        if(getMs() > (60000 * 5)) {
+            timing_setup();
+        }
+        LED_RED(0);
         RFST = 4;
         delayMs(80);
         doServices();
-        goToSleep(270);
+        goToSleep(220 + ((initial_wait / 1000) - 2));
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
