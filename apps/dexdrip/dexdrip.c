@@ -222,8 +222,8 @@ void goToSleep (uint16 seconds) {
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
-        SLEEP |= 0x02;                  // SLEEP.MODE = PM2
-        /*SLEEP |= 0x01;                  // SLEEP.MODE = PM2*/
+        /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
+        SLEEP |= 0x01;                  // SLEEP.MODE = PM2
 
         if(do_close_usb)
         {
@@ -329,7 +329,7 @@ uint8 WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
 uint8 get_packet(Dexcom_packet* pPkt, uint32 XDATA channel_wait) {
     uint8 nChannel = 0;
     uint8 XDATA fixed_channel = 0;
-    uint32 delay = channel_wait + 50;
+    uint32 delay = channel_wait + 500;
 
     for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
         if (fixed_channel == 1) {
@@ -339,6 +339,8 @@ uint8 get_packet(Dexcom_packet* pPkt, uint32 XDATA channel_wait) {
         }
         switch(WaitForPacket(delay, pPkt, nChannel)) {
         case 1:
+            LED_RED(0);
+            LED_YELLOW(0);
             return 1;
         case 0:
             if (nChannel == 3) {
@@ -348,7 +350,7 @@ uint8 get_packet(Dexcom_packet* pPkt, uint32 XDATA channel_wait) {
             continue;
         }
         if (nChannel == 2) {
-            delay = wait_before_channel_switch - 50;
+            delay = wait_before_channel_switch - 500;
         } else {
             delay = wait_before_channel_switch;
         }
@@ -430,7 +432,7 @@ void timing_setup() {
         RFST = 4;
         delayMs(80);
         doServices();
-        goToSleep(100 + ((initial_wait / 1000) - 2));
+        goToSleep(100 + ((initial_wait / 1000) - 5));
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
@@ -452,7 +454,7 @@ void timing_setup() {
         RFST = 4;
         delayMs(80);
         doServices();
-        goToSleep(100 + ((initial_wait / 1000) - 2));
+        goToSleep(100 + ((initial_wait / 1000) - 5));
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
@@ -473,7 +475,7 @@ void timing_setup() {
         RFST = 4;
         delayMs(80);
         doServices();
-        goToSleep(100 + ((initial_wait / 1000) - 2));
+        goToSleep(100 + ((initial_wait / 1000) - 5));
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
@@ -528,15 +530,17 @@ void main() {
             continue;
 
         print_packet(&Pkt);
+        LED_YELLOW(1);
 
         if(getMs() > (60000 * 5)) {
             timing_setup();
         }
+        LED_YELLOW(0);
         LED_RED(0);
         RFST = 4;
         delayMs(80);
         doServices();
-        goToSleep(100 + ((initial_wait / 1000) - 2));
+        goToSleep(100 + ((initial_wait / 1000) - 5));
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
