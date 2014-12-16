@@ -79,3 +79,9 @@ out that this is a possibility to me!
 Ben West, John Costik and Scott Leibrand their awesome work with Nightscout and various other projects!
 
 And all the other awesome people that helped me out and contributed to awesome projects like NightScout
+
+
+# LINKS
+* [What you will need & Diagrams](https://github.com/StephenBlackWasAlreadyTaken/DexDrip/blob/gh-pages/hardware_setup.md)
+* [Wixel App](https://github.com/StephenBlackWasAlreadyTaken/wixel-DexDrip)
+* [Android App](https://github.com/StephenBlackWasAlreadyTaken/DexDrip)
