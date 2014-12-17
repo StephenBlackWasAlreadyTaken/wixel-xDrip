@@ -57,10 +57,11 @@ static uint8 XDATA nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
 static uint32 XDATA five_minutes = (60000 * 5);
 uint32 XDATA initial_wait = 0;
 uint32 XDATA second_wait = 0;
-uint32 XDATA first_wait_fourth_channel = 0;
+uint32 XDATA wait_fourth_channel = 0;
 uint32 XDATA delay_offset = 0;
 uint16 XDATA wait_before_known_miss;
 uint16 XDATA fixed_wait_adder;
+uint32 start_time_main;
 
 
 uint8 lookup[16] = {
@@ -297,7 +298,7 @@ uint8 WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 XDATA channel
     uint32 XDATA start = getMs();
     uint8 XDATA * packet = 0;
     uint8 XDATA nRet = 0;
-    static uint8 XDATA lastpktxid = 64;
+    /*static uint8 XDATA lastpktxid = 64;*/
     uint8 XDATA txid = 0;
     swap_channel(nChannels[channel], fOffset[channel]);
 
@@ -314,10 +315,10 @@ uint8 WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 XDATA channel
                     pkt->txId -= channel;
                     txid = (pkt->txId & 0xFC) >> 2;
 
-                    if(txid != lastpktxid) {
+                    /*if(txid != lastpktxid) {*/
                         nRet = 1;
-                        lastpktxid = txid;
-                    }
+                        /*lastpktxid = txid;*/
+                    /*}*/
                 }
             }
             radioQueueRxDoneWithPacket();
@@ -327,9 +328,9 @@ uint8 WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 XDATA channel
     return nRet;
 }
 
-uint8 get_packet(Dexcom_packet* pPkt, uint32 XDATA channel_wait) {
+uint8 get_packet(Dexcom_packet* pPkt) {
     uint8 XDATA nChannel = 0;
-    uint32 XDATA delay = channel_wait + 100;
+    uint32 XDATA delay = fixed_wait_adder + 100;
 
     if(WaitForPacket(delay, pPkt, nChannel) == 1) {
         delay_offset = 0;
@@ -345,6 +346,7 @@ uint8 get_packet(Dexcom_packet* pPkt, uint32 XDATA channel_wait) {
                 return 0;
             }
         }
+        delay_offset = 0;
         return 0;
     }
 }
@@ -389,7 +391,9 @@ void rest(uint16 XDATA rest_time) {
     RFST = 4;
     delayMs(80);
     doServices();
+    LED_RED(1);
     goToSleep(rest_time + (delay_offset / 1000));
+    LED_RED(0);
     USBPOW = 1;
     USBCIE = 0b0111;
     radioMacInit();
@@ -400,78 +404,107 @@ void rest(uint16 XDATA rest_time) {
 void timing_setup() {
     /*7 pass timing setup*/
     /*first pass, wait on channel 1 for packets*/
+        uint8 XDATA do_timing_setup = 0;
+        uint32 XDATA start_time;
         Dexcom_packet Pkt;
-        memset(&Pkt, 0, sizeof(Dexcom_packet));
-        boardService();
-        LED_GREEN(1);
-        LED_RED(1);
-        while(!get_packet_fixed_channel(&Pkt, 0)) {}
 
-        print_packet(&Pkt);
-        LED_GREEN(0);
-    //sleep default, then wait on channel 1
-        while (initial_wait == 0 || initial_wait > five_minutes){
-            RFST = 4;
-            delayMs(80);
-            doServices();
-            goToSleep(100);
-            USBPOW = 1;
-            USBCIE = 0b0111;
-            radioMacInit();
-            MCSM1 = 0;
-            radioMacStrobe();
-
+        while( do_timing_setup < 3) {
+            do_timing_setup = 0;
             memset(&Pkt, 0, sizeof(Dexcom_packet));
             boardService();
-
-            timeInit();
             LED_GREEN(1);
+            LED_YELLOW(0);
+            LED_RED(1);
             while(!get_packet_fixed_channel(&Pkt, 0)) {}
-            print_packet(&Pkt);
-            LED_GREEN(0);
-            initial_wait = getMs();
-        }
-        initial_wait = 100 + (initial_wait / 1000) - 3;
 
-    //add to default sleep, then wait on channel 1
-        while (second_wait == 0 || second_wait > five_minutes) {
-            rest(initial_wait);
+            print_packet(&Pkt);
+            LED_RED(0);
+            LED_GREEN(0);
+        //sleep default, then wait on channel 1
+            initial_wait = five_minutes + 100;
+            while (initial_wait > five_minutes){
+                rest(100);
+                timeInit();
+                start_time = getMs();
+
+                memset(&Pkt, 0, sizeof(Dexcom_packet));
+                boardService();
+
+                LED_GREEN(1);
+                LED_YELLOW(0);
+                while(!get_packet_fixed_channel(&Pkt, 0)) {}
+
+                print_packet(&Pkt);
+                LED_GREEN(0);
+                LED_YELLOW(1);
+                initial_wait = getMs() - start_time;
+            }
+            initial_wait = 100 + (initial_wait / 1000) - 10;
+
+        //add to default sleep, then wait on channel 1
+            second_wait = five_minutes + 100;
+            while (second_wait > five_minutes && do_timing_setup == 0) {
+                rest(initial_wait);
+                timeInit();
+                start_time = getMs();
+
+                memset(&Pkt, 0, sizeof(Dexcom_packet));
+                boardService();
+                timeInit();
+                LED_GREEN(1);
+                LED_YELLOW(0);
+                while(!get_packet_fixed_channel(&Pkt, 0)) {}
+
+                print_packet(&Pkt);
+                LED_GREEN(0);
+                LED_YELLOW(1);
+                second_wait = getMs() - start_time;
+                if(second_wait > five_minutes) {
+                    do_timing_setup = 1;
+                }
+            }
+
+        //repeat but listen on channel 4
+            wait_fourth_channel = five_minutes + 100;
+            while (wait_fourth_channel > five_minutes && do_timing_setup == 0) {
+                rest(initial_wait);
+                timeInit();
+                start_time = getMs();
+
+                memset(&Pkt, 0, sizeof(Dexcom_packet));
+                boardService();
+                timeInit();
+                LED_GREEN(1);
+                LED_YELLOW(0);
+                while(!get_packet_fixed_channel(&Pkt, 3)) {}
+
+                print_packet(&Pkt);
+                LED_GREEN(0);
+                LED_YELLOW(1);
+                wait_fourth_channel = (getMs() - start_time) + 100;
+                if(wait_fourth_channel > five_minutes) {
+                    do_timing_setup = 1;
+                }
+            }
+
+        //Get back into timing for channel 1
+            rest(initial_wait - 10);
             memset(&Pkt, 0, sizeof(Dexcom_packet));
             boardService();
             timeInit();
             LED_GREEN(1);
+            LED_YELLOW(0);
             while(!get_packet_fixed_channel(&Pkt, 0)) {}
+
             print_packet(&Pkt);
             LED_GREEN(0);
-            second_wait = getMs();
+            do_timing_setup = 5;
         }
-
-    //repeat but listen on channel 4
-        while (first_wait_fourth_channel == 0 || first_wait_fourth_channel > five_minutes) {
-            rest(initial_wait);
-            memset(&Pkt, 0, sizeof(Dexcom_packet));
-            boardService();
-            timeInit();
-            LED_GREEN(1);
-            while(!get_packet_fixed_channel(&Pkt, 3)) {}
-            print_packet(&Pkt);
-            LED_GREEN(0);
-            first_wait_fourth_channel = getMs() + 100;
-        }
-
-    //Get back into timing for channel 1
-        rest(initial_wait - 10);
-        memset(&Pkt, 0, sizeof(Dexcom_packet));
-        boardService();
-        timeInit();
-        LED_GREEN(1);
-        while(!get_packet_fixed_channel(&Pkt, 0)) {}
-        LED_GREEN(0);
 
     //set resleep values and default
-        LED_RED(0);
-        fixed_wait_adder = (initial_wait + second_wait) / 2;
-        wait_before_known_miss = first_wait_fourth_channel - fixed_wait_adder;
+        LED_YELLOW(0);
+        fixed_wait_adder = second_wait;
+        wait_before_known_miss = wait_fourth_channel;
 }
 
 void main() {
@@ -493,23 +526,24 @@ void main() {
     MCSM1 = 0;
 
     timing_setup();
-
     while(1) {
         Dexcom_packet Pkt;
-        timeInit();
+
+        rest(initial_wait);
+
+        start_time_main = getMs();
         memset(&Pkt, 0, sizeof(Dexcom_packet));
         boardService();
         LED_YELLOW(1);
-        if(!get_packet(&Pkt, fixed_wait_adder))
+        if(!get_packet(&Pkt))
             continue;
 
         print_packet(&Pkt);
 
-        if(getMs() > five_minutes) {
+        if(getMs() - start_time_main > five_minutes) {
             timing_setup();
         }
         LED_YELLOW(0);
         LED_RED(0);
-        rest(initial_wait);
     }
 }
