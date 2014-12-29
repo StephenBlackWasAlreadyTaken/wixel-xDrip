@@ -37,9 +37,7 @@ radio_channel: See description in radio_link.h.
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //..................SET THESE VARIABLES TO MEET YOUR NEEDS..........................................//
 static volatile BIT usbEnabled = 1;                                                                 //
-static const char transmitter_id[] = "ABCDE";                                                       //
 static volatile BIT do_close_usb = 1;                                                               //
-static volatile BIT only_listen_for_my_transmitter = 0;                                             //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -48,8 +46,8 @@ extern int32 channel_number = 0;
 static volatile int start_channel = 0;
 extern volatile BIT channel_select = 0;
 uint32 asciiToDexcomSrc(char *addr);
+void dexcom_src_to_ascii(uint32 src, char addr[6]);
 uint32 getSrcValue(char srcVal);
-volatile uint32 dex_tx_id;
 #define NUM_CHANNELS        (4)
 static uint8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
@@ -171,8 +169,10 @@ uint32 getSrcValue(char srcVal) {
     return i & 0xFF;
 }
 void print_packet(Dexcom_packet* pPkt) {
+    char a[6];
+    dexcom_src_to_ascii(pPkt->src_addr, a);
     uartEnable();
-    printf("%lu %lu %hhu", dex_num_decoder(pPkt->raw), 2 * dex_num_decoder(pPkt->filtered), pPkt->battery);
+    printf("%lu %lu %hhu %s", dex_num_decoder(pPkt->raw), 2 * dex_num_decoder(pPkt->filtered), pPkt->battery, a);
     uartDisable();
 }
 
@@ -305,14 +305,12 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
                 fOffset[channel] += FREQEST;
                 memcpy(pkt, packet, min8(len+2, sizeof(Dexcom_packet)));
 
-                if(pkt->src_addr == dex_tx_id || dex_tx_id == 0 || only_listen_for_my_transmitter == 0) {
-                    pkt->txId -= channel;
-                    txid = (pkt->txId & 0xFC) >> 2;
+                pkt->txId -= channel;
+                txid = (pkt->txId & 0xFC) >> 2;
 
-                    if(txid != lastpktxid) {
-                        nRet = 1;
-                        lastpktxid = txid;
-                    }
+                if(txid != lastpktxid) {
+                    nRet = 1;
+                    lastpktxid = txid;
                 }
             }
             radioQueueRxDoneWithPacket();
@@ -381,7 +379,6 @@ void main() {
 
     delayMs(4000);
     configBt();
-    dex_tx_id= asciiToDexcomSrc(transmitter_id);
     delayMs(4000);
 
     radioQueueInit();
