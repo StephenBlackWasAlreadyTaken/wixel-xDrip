@@ -60,7 +60,7 @@ track of their glucose levels in real(ish)time
 ### Why this then?
 The current dexcom has its own proprietary reciever that unfortunately cannot
 talk to phones unless using a project like
-[NightScount](http://www.nightscout.info/) Which is an awesome project I HIGHLY recomend you check out
+[NightScout](http://www.nightscout.info/) Which is an awesome project I HIGHLY recomend you check out
 
 # HUGE PROPS TO:
 Adrien De Croy for writing most of this for his Dexterity Prject!
@@ -79,3 +79,10 @@ out that this is a possibility to me!
 Ben West, John Costik and Scott Leibrand their awesome work with Nightscout and various other projects!
 
 And all the other awesome people that helped me out and contributed to awesome projects like NightScout
+
+
+# LINKS
+* [Project Site](http://stephenblackwasalreadytaken.github.io/DexDrip/)
+* [What you will need & Diagrams](https://github.com/StephenBlackWasAlreadyTaken/DexDrip/blob/gh-pages/hardware_setup.md)
+* [Wixel App](https://github.com/StephenBlackWasAlreadyTaken/wixel-DexDrip)
+* [Android App](https://github.com/StephenBlackWasAlreadyTaken/DexDrip)
