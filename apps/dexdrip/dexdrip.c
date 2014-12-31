@@ -180,10 +180,10 @@ uint32 getSrcValue(char srcVal) {
     return i & 0xFF;
 }
 void print_packet(Dexcom_packet* pPkt) {
-    adcSetMillivoltCalibration(adcReadVddMillivolts());
+	adcSetMillivoltCalibration(adcReadVddMillivolts());
 	uartEnable();
 	printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(5)));
-    uartDisable();
+	uartDisable();
 }
 
 void makeAllOutputs() {
@@ -231,8 +231,8 @@ void goToSleep (uint16 seconds) {
         WOREVT0 = (seconds & 0xff);
         PCON |= 0x01; // PCON.IDLE = 1;
     } else {
-        uint32 XDATA start = getMs();
-        uint32 XDATA end = getMs();
+        uint32 start = getMs();
+        uint32 end = getMs();
         while(((end-start)/1000)<seconds) {
             end = getMs();
             /*LED_RED( ((getMs()/1000) % 2) == 0 );*/
@@ -261,7 +261,7 @@ void swap_channel(uint8 channel, uint8 newFSCTRL0)
 }
 
 int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
-    uint32 XDATA start = getMs();
+    uint32 start = getMs();
     uint8 XDATA * packet = 0;
     int XDATA nRet = 0;
     static uint8 XDATA lastpktxid = 64;
