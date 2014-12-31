@@ -180,14 +180,14 @@ uint32 getSrcValue(char srcVal) {
     return i & 0xFF;
 }
 void print_packet(Dexcom_packet* pPkt) {
-	adcSetMillivoltCalibration(adcReadVddMillivolts());
-	uartEnable();
-	printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(5)));
-	uartDisable();
+    adcSetMillivoltCalibration(adcReadVddMillivolts());
+    uartEnable();
+    printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(5)));
+    uartDisable();
 }
 
 void makeAllOutputs() {
-    int XDATA i;
+	int XDATA i;
     for (i=0; i < 16; i++) {
         setDigitalOutput(i, LOW);
     }
