@@ -34,9 +34,18 @@ wixel back into bootloader mode.
 
 
 * step 3: Run the MAKE command to generate a file you can install on your Wixel
+  
+  ##### ON A MAC/LINUX
   * In your terminal/command prompt head to the directory where you
   cloned/unzipped this repo.
   * Run `make`
+   
+  ##### ON WINDOWS
+  * Open a command prompt (should be under start menu -> programs -> accessories -> Command Prompt)
+  * Cd into the folder you downloaded this repo to (ex. `cd C:\Users\<computer name>\Desktop\wixel-DexDrip`)
+  * now run `make_all.bat` by typing `make_all.bat` into the command prompt
+  
+
   * You should see a lot of lines that end something like 
   ```
   Linking apps/dexdrip/dexdrip.hex
@@ -53,14 +62,6 @@ wixel back into bootloader mode.
 The wixel will transmit the data out over uart using pins p1_6 and p1_7 at a
 baud rate of 9600, feel free to change that in the code if you need.
 
-### Whats a dexcom?
-Its an amazing CGM (continue glucose monitor) that many Diabetics use to keep
-track of their glucose levels in real(ish)time
-
-### Why this then?
-The current dexcom has its own proprietary reciever that unfortunately cannot
-talk to phones unless using a project like
-[NightScout](http://www.nightscout.info/) Which is an awesome project I HIGHLY recomend you check out
 
 # HUGE PROPS TO:
 Adrien De Croy for writing most of this for his Dexterity Prject!
