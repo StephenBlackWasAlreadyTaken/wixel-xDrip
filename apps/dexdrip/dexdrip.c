@@ -40,7 +40,7 @@ radio_channel: See description in radio_link.h.
 static volatile BIT usbEnabled = 1;                                                                 //
 static XDATA const char transmitter_id[] = "ABCDE";                                                 //
 static volatile BIT do_close_usb = 1;                                                               //
-static volatile BIT only_listen_for_my_transmitter = 1;                                             //
+static volatile BIT only_listen_for_my_transmitter = 0;                                             //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
