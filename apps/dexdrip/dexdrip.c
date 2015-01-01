@@ -207,19 +207,16 @@ ISR (ST, 0) {
 void goToSleep (uint16 seconds) {
     unsigned char XDATA temp;
 
-    if(!usbEnabled) {
+    if(!usbPowerPresent()) {
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
         /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
         SLEEP |= 0x01;                  // SLEEP.MODE = PM2
 
-        if(do_close_usb)
-        {
-            SLEEP &= ~(1<<7);
-            disableUsbPullup();
-            usbDeviceState = USB_STATE_DETACHED;
-        }
+        SLEEP &= ~(1<<7);
+        disableUsbPullup();
+        usbDeviceState = USB_STATE_DETACHED;
 
         WORCTRL |= 0x04;  // Reset
         temp = WORTIME0;
@@ -230,7 +227,13 @@ void goToSleep (uint16 seconds) {
         WOREVT1 = (seconds >> 8);
         WOREVT0 = (seconds & 0xff);
         PCON |= 0x01; // PCON.IDLE = 1;
+
     } else {
+        if (usbDeviceState == USB_STATE_DETACHED) {
+            enableUsbPullup()
+            usbDeviceState = USB_STATE_ATTACHED
+            SLEEP |= (1<<7)
+        }
         uint32 start = getMs();
         uint32 end = getMs();
         while(((end-start)/1000)<seconds) {
