@@ -20,13 +20,13 @@ Its easy!
 
 * step 2.5: Modify the top section of the file `apps/dexdrip/dexdrip.c` to fit
 your needs
-  * Likely you will want to enter your actual transmitter id, and set
+  * Likely you will want to enter your actual transmitter id (Should only be numbers and **CAPITAL LETTERS** , and set
 `only_listen_to_my_transmitter` to 1.
 
-  * Leaving `usbEnabled` at `0` will allow you to listen for updates from your
+  * Leaving `usbEnabled` at `1` and `do_close_usb` to `0` will allow you to listen for updates from your
 dexcom over usb, handy for debugging, also it will let you reload files onto
 your wixel with ease.
-setting `usbEnabled` to `1` will result in better battery life, but you loose
+setting `usbEnabled` to `0` and `do_close_usb` to `1` will result in better battery life, but you loose
 the ability to listen for updates over usb AND if you want to update the file
 on your wixel, you will need to jump the wixel into BootLoader mode. see
 [this](http://www.pololu.com/docs/0J46/5.c) for instructions on getting the
@@ -41,6 +41,7 @@ wixel back into bootloader mode.
   * Run `make`
    
   ##### ON WINDOWS
+  * Install the wixel development bundle for windows from [here](http://www.pololu.com/file/0J526/wixel-dev-bundle-120127.exe) (you need this in addition to the drivers you downloaded in step 2!!)
   * Open a command prompt (should be under start menu -> programs -> accessories -> Command Prompt)
   * Cd into the folder you downloaded this repo to (ex. `cd C:\Users\<computer name>\Desktop\wixel-DexDrip`)
   * now run `make_all.bat` by typing `make_all.bat` into the command prompt
