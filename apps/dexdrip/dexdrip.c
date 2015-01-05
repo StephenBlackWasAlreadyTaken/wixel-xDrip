@@ -302,41 +302,36 @@ uint8 WaitForPacket(Dexcom_packet* pkt, uint8 channel) {
     return 0;
 }
 
-uint8 get_packet_fixed_channel(Dexcom_packet* pPkt, uint8 XDATA nChannel) {
+uint8 get_packet_fixed_channel_timed(Dexcom_packet* pPkt, uint8 XDATA nChannel, uint32 wait_time) {
+    uint32 start_time_packet;
     swap_channel(nChannels[nChannel], fOffset[nChannel]);
-    while(1) {
+    start_time_packet = getMs();
+    while(getMs() - start_time_packet < wait_time) {
         if(WaitForPacket(pPkt, nChannel)) {
             return 1;
         }
     }
+    return 0;
 }
 
-uint8 get_packet_fixed_channel_timed(Dexcom_packet* pPkt, uint8 XDATA nChannel) {
-    if(WaitForPacket(pPkt, nChannel)) {
+uint8 get_packet_fixed_channel(Dexcom_packet* pPkt, uint8 XDATA nChannel) {
+    swap_channel(nChannels[nChannel], fOffset[nChannel]);
+    if (get_packet_fixed_channel_timed(pPkt, 0, five_minutes + 5000)) {
         return 1;
     }
     return 0;
 }
 
+
 uint8 get_packet(Dexcom_packet* pPkt) {
     uint32 start_time_packet = getMs();
-    swap_channel(nChannels[0], fOffset[0]);
-    while(getMs() - start_time_packet < fixed_wait_adder + 1400) {
-        if(get_packet_fixed_channel_timed(pPkt, 0)) {
-            return 1;
-        }
+
+    if (get_packet_fixed_channel_timed(pPkt, 0, fixed_wait_adder + 1400)) {
+        return 1;
     }
-    start_time_packet = getMs();
-    swap_channel(nChannels[3], fOffset[3]);
-    while(getMs() - start_time_packet < 7000) {
-        if(get_packet_fixed_channel_timed(pPkt, 3)) {
-            channel_drift = 1;
-            swap_channel(nChannels[0], fOffset[0]);
-            return 1;
-        }
-    }
-    swap_channel(nChannels[0], fOffset[0]);
+
     channel_drift = 1;
+    get_packet_fixed_channel_timed(pPkt, 3, 5000);
     return 1;
 }
 
@@ -353,7 +348,6 @@ void configBt() {
 }
 
 void rest(uint32 rest_time) {
-    LED_RED(1);
     if(rest_time < 10) {
         rest_time = 10;
     }
@@ -366,7 +360,6 @@ void rest(uint32 rest_time) {
     radioMacInit();
     MCSM1 = 0;
     radioMacStrobe();
-    LED_RED(0);
 }
 
 void main() {
@@ -402,9 +395,11 @@ void main() {
             rest(10);
             memset(&Pkt, 0, sizeof(Dexcom_packet));
             doServices();
-            get_packet_fixed_channel(&Pkt, 0);
-
-            print_packet(&Pkt);
+            if (get_packet_fixed_channel(&Pkt, 0)) {
+                print_packet(&Pkt);
+            } else {
+                do_timing_setup = 2;
+            }
         }
 
         if (do_timing_setup == 1) {
@@ -413,15 +408,13 @@ void main() {
             doServices();
             timeInit();
             start_time = getMs();
-            get_packet_fixed_channel(&Pkt, 0);
 
-            initial_wait = getMs() - start_time;
-            print_packet(&Pkt);
-
-            if(initial_wait > five_minutes) {
+            if (get_packet_fixed_channel(&Pkt, 0)) {
+                initial_wait = getMs() - start_time;
+                print_packet(&Pkt);
+            } else {
                 do_timing_setup = 2;
             }
-            initial_wait = 100 + (initial_wait / 1000) - 30;
         }
 
     //add to default sleep, then wait on channel 1
@@ -431,16 +424,13 @@ void main() {
             doServices();
             timeInit();
             start_time = getMs();
-            get_packet_fixed_channel(&Pkt, 0);
 
-            second_wait = getMs() - start_time;
-            print_packet(&Pkt);
-
-            if(second_wait > five_minutes) {
-                do_timing_setup = 2;
-            } else {
+            if (get_packet_fixed_channel(&Pkt, 0)) {
+                second_wait = getMs() - start_time;
                 do_timing_setup = 0;
-                fixed_wait_adder = second_wait;
+                print_packet(&Pkt);
+            } else {
+                do_timing_setup = 2;
             }
         }
 
