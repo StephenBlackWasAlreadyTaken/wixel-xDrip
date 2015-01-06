@@ -327,7 +327,7 @@ uint8 get_packet(Dexcom_packet* pPkt) {
     uint16 scan_channel = 0;
 
     LED_YELLOW(1);
-    while(getMs() - loop_start_time_packet < fixed_wait_adder + 5000) {
+    while(getMs() - loop_start_time_packet < second_wait + 5000) {
         if (get_packet_fixed_channel_timed(pPkt, scan_channel, 10)) {
             LED_YELLOW(0);
             return 1;
@@ -417,7 +417,7 @@ void main() {
 
             if (get_packet_fixed_channel(&Pkt, 0)) {
                 initial_wait = getMs() - start_time;
-                initial_wait = 100 + (initial_wait / 1000) - 18;
+                initial_wait = 100 + (initial_wait / 1000) - 25;
                 print_packet(&Pkt);
             } else {
                 do_timing_setup = 2;
