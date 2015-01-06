@@ -39,7 +39,7 @@ radio_channel: See description in radio_link.h.
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //..................SET THESE VARIABLES TO MEET YOUR NEEDS..........................................//
 //                           0 = false, 1 = true                                                    //
-static const char XDATA dexcom_transmitter_id[] = "ABCDE";                                          //
+static const char XDATA dexcom_transmitter_id[] = "66ENF";                                          //
 static volatile BIT only_listen_for_my_transmitter = 1;                                             //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -58,7 +58,6 @@ uint32 XDATA second_wait = 0;
 uint32 XDATA wait_fourth_channel = 0;
 uint8 do_timing_setup = 1;
 uint8 been_there_done_that = 0;
-uint16 XDATA fixed_wait_adder;
 uint32 start_time_main;
 uint32 channel_drift = 0;
 BIT usb_off = 0;
@@ -281,8 +280,7 @@ uint8 WaitForPacket(Dexcom_packet* pkt, uint8 channel) {
     uint8 XDATA txid = 0;
     uint32 XDATA start_scan = getMs();
 
-    while ((getMs() - start_scan) < 4) {
-        doServices();
+    while ((getMs() - start_scan) < 10) {
         if (packet = radioQueueRxCurrentPacket()) {
             uint8 XDATA len = packet[0];
 
@@ -315,7 +313,7 @@ uint8 get_packet_fixed_channel_timed(Dexcom_packet* pPkt, uint8 XDATA nChannel, 
 }
 
 uint8 get_packet_fixed_channel(Dexcom_packet* pPkt, uint8 XDATA nChannel) {
-    if (get_packet_fixed_channel_timed(pPkt, 0, five_minutes + 5000)) {
+    if (get_packet_fixed_channel_timed(pPkt, nChannel, five_minutes + 20000)) {
         return 1;
     }
     return 0;
@@ -324,17 +322,20 @@ uint8 get_packet_fixed_channel(Dexcom_packet* pPkt, uint8 XDATA nChannel) {
 
 uint8 get_packet(Dexcom_packet* pPkt) {
     uint32 loop_start_time_packet = getMs();
-    uint16 scan_channel = 0;
 
     LED_YELLOW(1);
-    while(getMs() - loop_start_time_packet < fixed_wait_adder + 5000) {
-        if (get_packet_fixed_channel_timed(pPkt, scan_channel, 10)) {
-            LED_YELLOW(0);
-            return 1;
-        }
-        scan_channel = ((scan_channel + 1) % 4);
+    if (get_packet_fixed_channel_timed(pPkt, 0, second_wait + 1200)) {
+        LED_YELLOW(0);
+        return 1;
     }
     channel_drift = 1;
+    LED_GREEN(1);
+    if (get_packet_fixed_channel_timed(pPkt, 3, 5000)) {
+        LED_GREEN(0);
+        LED_YELLOW(0);
+        return 1;
+    }
+    LED_GREEN(0);
     LED_YELLOW(0);
     return 0;
 }
@@ -398,6 +399,7 @@ void main() {
         }
 
         if (do_timing_setup == 1) {
+            LED_GREEN(1);
             rest(10);
             memset(&Pkt, 0, sizeof(Dexcom_packet));
             doServices();
@@ -409,7 +411,7 @@ void main() {
         }
 
         if (do_timing_setup == 1) {
-            rest(100);
+            rest(240);
             memset(&Pkt, 0, sizeof(Dexcom_packet));
             doServices();
             timeInit();
@@ -417,7 +419,7 @@ void main() {
 
             if (get_packet_fixed_channel(&Pkt, 0)) {
                 initial_wait = getMs() - start_time;
-                initial_wait = 100 + (initial_wait / 1000) - 18;
+                initial_wait = 240 + (initial_wait / 1000) - 15;
                 print_packet(&Pkt);
             } else {
                 do_timing_setup = 2;
@@ -436,6 +438,7 @@ void main() {
                 second_wait = getMs() - start_time;
                 do_timing_setup = 0;
                 print_packet(&Pkt);
+                LED_GREEN(1);
             } else {
                 do_timing_setup = 2;
             }
