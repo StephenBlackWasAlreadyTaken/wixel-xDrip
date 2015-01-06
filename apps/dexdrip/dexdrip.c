@@ -281,7 +281,7 @@ uint8 WaitForPacket(Dexcom_packet* pkt, uint8 channel) {
     uint8 XDATA txid = 0;
     uint32 XDATA start_scan = getMs();
 
-    while ((getMs() - start_scan) < 20) {
+    while ((getMs() - start_scan) < 4) {
         doServices();
         if (packet = radioQueueRxCurrentPacket()) {
             uint8 XDATA len = packet[0];
@@ -315,7 +315,6 @@ uint8 get_packet_fixed_channel_timed(Dexcom_packet* pPkt, uint8 XDATA nChannel, 
 }
 
 uint8 get_packet_fixed_channel(Dexcom_packet* pPkt, uint8 XDATA nChannel) {
-    swap_channel(nChannels[nChannel], fOffset[nChannel]);
     if (get_packet_fixed_channel_timed(pPkt, 0, five_minutes + 5000)) {
         return 1;
     }
@@ -324,15 +323,20 @@ uint8 get_packet_fixed_channel(Dexcom_packet* pPkt, uint8 XDATA nChannel) {
 
 
 uint8 get_packet(Dexcom_packet* pPkt) {
-    uint32 start_time_packet = getMs();
+    uint32 loop_start_time_packet = getMs();
+    uint16 scan_channel = 0;
 
-    if (get_packet_fixed_channel_timed(pPkt, 0, fixed_wait_adder + 1400)) {
-        return 1;
+    LED_YELLOW(1);
+    while(getMs() - loop_start_time_packet < fixed_wait_adder + 5000) {
+        if (get_packet_fixed_channel_timed(pPkt, scan_channel, 10)) {
+            LED_YELLOW(0);
+            return 1;
+        }
+        scan_channel = ((scan_channel + 1) % 4);
     }
-
     channel_drift = 1;
-    get_packet_fixed_channel_timed(pPkt, 3, 5000);
-    return 1;
+    LED_YELLOW(0);
+    return 0;
 }
 
 
@@ -351,6 +355,7 @@ void rest(uint32 rest_time) {
     if(rest_time < 10) {
         rest_time = 10;
     }
+    LED_RED(1);
     RFST = 4;
     delayMs(4000);
     doServices();
@@ -360,6 +365,7 @@ void rest(uint32 rest_time) {
     radioMacInit();
     MCSM1 = 0;
     radioMacStrobe();
+    LED_RED(0);
 }
 
 void main() {
@@ -411,6 +417,7 @@ void main() {
 
             if (get_packet_fixed_channel(&Pkt, 0)) {
                 initial_wait = getMs() - start_time;
+                initial_wait = 100 + (initial_wait / 1000) - 18;
                 print_packet(&Pkt);
             } else {
                 do_timing_setup = 2;
@@ -449,12 +456,6 @@ void main() {
                 do_timing_setup = 3;
                 been_there_done_that++;
                 channel_drift = 0;
-            }
-            if(getMs() - start_time > five_minutes) {
-                do_timing_setup = 3;
-                been_there_done_that++;
-            } else {
-                been_there_done_that = 0;
             }
         }
 
