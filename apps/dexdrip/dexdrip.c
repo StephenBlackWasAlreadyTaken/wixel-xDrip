@@ -180,7 +180,6 @@ uint32 getSrcValue(char srcVal) {
     return i & 0xFF;
 }
 void print_packet(Dexcom_packet* pPkt) {
-    adcSetMillivoltCalibration(adcReadVddMillivolts());
     uartEnable();
     printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(5)));
     uartDisable();
@@ -188,7 +187,7 @@ void print_packet(Dexcom_packet* pPkt) {
 
 void makeAllOutputs() {
     int XDATA i;
-    for (i=0; i < 16; i++) {
+    for (i=6; i < 16; i++) { // in the future, this should be set to only the channels being used for output, and add the one for input
         setDigitalOutput(i, LOW);
     }
 }
@@ -208,6 +207,7 @@ void goToSleep (uint16 seconds) {
     unsigned char XDATA temp;
 
     if(!usbEnabled) {
+		adcSetMillivoltCalibration(adcReadVddMillivolts());
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
@@ -314,6 +314,9 @@ int get_packet(Dexcom_packet* pPkt) {
     return 0;
 }
 
+void setADCInputs() {
+    P0INP=0; //set pull resistors on pins 0_0 - 0_5 to low
+}
 
 void configBt() {
     uartEnable();
@@ -331,6 +334,7 @@ void main() {
     initUart1();
     P1DIR |= 0x08; // RTS
     makeAllOutputs();
+    setADCInputs();
 
     delayMs(4000);
     configBt();
