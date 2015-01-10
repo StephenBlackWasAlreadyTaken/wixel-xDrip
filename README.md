@@ -35,11 +35,24 @@ wixel back into bootloader mode.
 
 * step 3: Run the MAKE command to generate a file you can install on your Wixel
   
-  ##### ON A MAC/LINUX
-  * In your terminal/command prompt head to the directory where you
-  cloned/unzipped this repo.
-  * Run `make`
-   
+  ##### ON A MAC
+ * If you do not already have sdcc, you will need to do the following (not sure? open a terminal and run `sdcc -v` if you get the error `sdcc: command not found` then you need to install it!
+  * Open a new terminal (if you cant find terminal, just search for it in spotlight) then run the following commands (just coppy and paste this whole big ol thing)
+  * `curl -O http://sourceforge.net/projects/sdcc/files/sdcc-macosx/3.4.0/sdcc-3.4.0-universal-apple-macosx.tar.bz2 -L; tar xjf sdcc-3.4.0-universal-apple-macosx.tar.bz2; cd sdcc-3.4.0; cp -r * /usr/local`
+    * If that last command gave you a bunch of lines saying permission denied at the end, you can try with sudo (note that you dont want to use sudo unless you absolutely have to) Now just run `sudo cp -r * /usr/local` it should ask for your password, just type in your macs password and hit enter (Note that you will not see anything while typing the password)
+  * Cool, now if you run `sdcc -v` you should see something like `SDCC : mcs51/z80/z180....`
+  
+ * Now back to our wixel app!
+    * In your terminal/command prompt head to the directory where you cloned/unzipped this repo.
+    * Run `make`
+    * If you dont already have Command line tools installed it will ask you if you want to install them, just say yes and let it do its thing (note, on a mac version earlier than maverics, you will need to download xcode manually in order to install command line tools)
+    * If successfull you should see a lot of lines that end something like 
+   ```
+   Linking apps/dexdrip/dexdrip.hex
+   Packaging apps/dexdrip/dexdrip.wxl
+   packihx: read 413 lines, wrote 779: OK.
+   ```
+  
   ##### ON WINDOWS
   * Install the wixel development bundle for windows from [here](http://www.pololu.com/file/0J526/wixel-dev-bundle-120127.exe) (you need this in addition to the drivers you downloaded in step 2!!)
   * Open a command prompt (should be under start menu -> programs -> accessories -> Command Prompt)
