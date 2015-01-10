@@ -50,6 +50,8 @@ volatile XDATA uint32 dex_tx_id;
 #define NUM_CHANNELS        (4)
 static XDATA int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
+BIT usb = 1;
+uint32 XDATA delay = 0;
 
 typedef struct _Dexcom_packet {
     uint8   len;
@@ -204,6 +206,10 @@ void goToSleep (uint16 seconds) {
     unsigned char XDATA temp;
 
     if(!usbPowerPresent()) {
+        if(usb) {
+            usb = 0;
+            delay = 0;
+        }
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
@@ -226,11 +232,15 @@ void goToSleep (uint16 seconds) {
     } else {
         uint32 start = getMs();
         uint32 end = getMs();
+        if(!usb) {
+            usb = 1;
+            delay = 0;
+        }
         usbDeviceState = USB_STATE_POWERED;
         enableUsbPullup();
         while(((end-start)/1000)<seconds) {
             end = getMs();
-            /*LED_RED( ((getMs()/1000) % 2) == 0 );*/
+            LED_RED( ((getMs()/1000) % 2) == 0 );
             delayMs(100);
             doServices();
         }
@@ -293,7 +303,6 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
 }
 
 int get_packet(Dexcom_packet* pPkt) {
-    int XDATA delay = 0;
     int XDATA nChannel = 0;
     for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
         switch(WaitForPacket(delay, pPkt, nChannel)) {
@@ -312,7 +321,7 @@ int get_packet(Dexcom_packet* pPkt) {
 
 void configBt() {
     uartEnable();
-    printf("AT+NAMEDexDrip2");
+    printf("AT+NAMEDexDrip");
     uartDisable();
 }
 
@@ -346,7 +355,7 @@ void main() {
         print_packet(&Pkt);
 
         RFST = 4;
-        delayMs(80);
+        delayMs(100);
         doServices();
         goToSleep(270);
         USBPOW = 1;
