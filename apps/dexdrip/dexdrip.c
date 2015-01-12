@@ -50,7 +50,7 @@ BIT do_lights = 1;                                                              
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
-
+BIT adjust_offset = 0;
 // Dont Change anything from here on in unless you know what your doing (Or just want to have funzies!
 uint32 asciiToDexcomSrc(char *addr);
 uint32 getSrcValue(char srcVal);
@@ -320,7 +320,7 @@ uint32 get_packet_fixed_channel_timed(Dexcom_packet* pkt, uint8 XDATA channel, u
             pkt->txId -= channel;
 
             if(pkt->src_addr == dex_tx_id || dex_tx_id == 0 || only_listen_for_my_transmitter == 0) {
-                fOffset[channel] += FREQEST;
+                if(adjust_offset) { fOffset[channel] += FREQEST; }
                 txid = (pkt->txId & 0xFC) >> 2;
                 if(txid != lasttxid) {
                     lasttxid = txid;
