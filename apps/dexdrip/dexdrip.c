@@ -12,8 +12,12 @@
 
   Also, if you dont want to use usb, set it to zero and set close usb to 1
 
-  == Parameters ==
-radio_channel: See description in radio_link.h.
+  if do_lights = 1, the lights indicate the following
+     RED LIGHT = Sleeping
+     GREEN LIGHT = Sending Packet
+     YELLOW LIGHT = Scanning channel 1 in the main loop
+     YELLOW AND RED LIGHT = Scanning channel 3 in the main loop
+     NO LIGHT = Scanning for packets in order to find timings
 */
 
 
@@ -36,24 +40,37 @@ radio_channel: See description in radio_link.h.
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 //..................SET THESE VARIABLES TO MEET YOUR NEEDS..........................................//
-static volatile BIT usbEnabled = 1;                                                                 //
-static XDATA const char transmitter_id[] = "ABCDE";                                                 //
-static volatile BIT do_close_usb = 1;                                                               //
+//                           0 = false, 1 = true                                                    //
+static const char XDATA dexcom_transmitter_id[] = "ABCDE";                                          //
 static volatile BIT only_listen_for_my_transmitter = 0;                                             //
+BIT do_lights = 1;                                                                                  //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 
-extern XDATA int32 channel_number = 0;
-static XDATA volatile int start_channel = 0;
-extern volatile BIT channel_select = 0;
-uint32 XDATA asciiToDexcomSrc(char *addr);
-uint32 XDATA getSrcValue(char srcVal);
-volatile XDATA uint32 dex_tx_id;
+// Dont Change anything from here on in unless you know what your doing (Or just want to have funzies!
+uint32 asciiToDexcomSrc(char *addr);
+uint32 getSrcValue(char srcVal);
+volatile uint32 dex_tx_id;
 #define NUM_CHANNELS        (4)
-static XDATA int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
-static XDATA uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
+static uint8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
+static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
+static uint32 XDATA five_minutes = 300000;
+static uint8 lasttxid = 64;
+// TIMING VARIABLES
+uint32 XDATA initial_wait = 0;
+uint32 XDATA third_wait = 0;
+uint32 should_wait_first = 0;
+uint32 should_wait_next = 0;
+
+// STATE VARIABLES
+uint8 do_timing_setup = 1;
+uint8 been_there_done_that = 0;
+uint32 channel_drift = 0;
+BIT usb_off = 0;
 
 typedef struct _Dexcom_packet {
     uint8   len;
@@ -71,17 +88,36 @@ typedef struct _Dexcom_packet {
     uint8   LQI;
 } Dexcom_packet;
 
+void green_on() {
+    if(do_lights) { LED_GREEN(1); }
+}
+void green_off() {
+    if(do_lights) { LED_GREEN(0); }
+}
+void red_on() {
+    if(do_lights) { LED_RED(1); }
+}
+void red_off() {
+    if(do_lights) { LED_RED(0); }
+}
+void yellow_on() {
+    if(do_lights) { LED_YELLOW(1); }
+}
+void yellow_off() {
+    if(do_lights) { LED_YELLOW(0) }
+}
+
 void uartEnable() {
+    green_on();
     U1UCR |= 0x40; //CTS/RTS ON
-    delayMs(1000);
+    delayMs(4000);
 }
 
 void uartDisable() {
-    LED_GREEN(1);
-    delayMs(2000);
+    delayMs(4000);
     U1UCR &= ~0x40; //CTS/RTS Off
-    LED_GREEN(0);
     U1CSR &= ~0x40; // Recevier disable
+    green_off();
 }
 
 int8 getPacketRSSI(Dexcom_packet* p) {
@@ -149,14 +185,6 @@ void dexcom_src_to_ascii(uint32 src, char addr[6]) {
     addr[5] = 0;
 }
 
-void doServices()
-{
-    if(usbEnabled) {
-        boardService();
-        usbComService();
-    }
-}
-
 void initUart1() {
     uart1Init();
     uart1SetBaudRate(9600);
@@ -195,31 +223,39 @@ void makeAllOutputs() {
 
 ISR (ST, 0) {
     IRCON &= ~0x80;
-    SLEEP &= ~0x02;
+    SLEEP &= ~0x01;                  // SLEEP.MODE = PM1
+    /*SLEEP &= ~0x02;*/
     IEN0 &= ~0x20;
     WORIRQ &= ~0x11;
     WORCTRL &= ~0x03;
-    if(do_close_usb && usbEnabled) {
+    if(!usb_off) {
          usbPoll();
+    }
+}
+
+void doServices() {
+    if(usbPowerPresent()) {
+        boardService();
+        usbComService();
     }
 }
 
 void goToSleep (uint16 seconds) {
     unsigned char XDATA temp;
 
-    if(!usbEnabled) {
+    if(!usbPowerPresent()) {
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
-        /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
-        SLEEP |= 0x01;                  // SLEEP.MODE = PM2
-
-        if(do_close_usb)
-        {
-            SLEEP &= ~(1<<7);
+        if(!usb_off) {
             disableUsbPullup();
             usbDeviceState = USB_STATE_DETACHED;
+            SLEEP &= ~(1<<7);
+            do_timing_setup = 2;
+            usb_off = 1;
         }
+        /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
+        SLEEP |= 0x01;                  // SLEEP.MODE = PM1
 
         WORCTRL |= 0x04;  // Reset
         temp = WORTIME0;
@@ -231,11 +267,18 @@ void goToSleep (uint16 seconds) {
         WOREVT0 = (seconds & 0xff);
         PCON |= 0x01; // PCON.IDLE = 1;
     } else {
-        uint32 start = getMs();
-        uint32 end = getMs();
-        while(((end-start)/1000)<seconds) {
-            end = getMs();
-            /*LED_RED( ((getMs()/1000) % 2) == 0 );*/
+        uint32 start_sleep = getMs();
+        uint32 end_sleep = getMs();
+        if(usb_off) {
+            enableUsbPullup();
+            usbDeviceState = USB_STATE_POWERED;
+            SLEEP |= (1<<7);
+            do_timing_setup = 2;
+            usb_off = 0;
+        }
+
+        while(((end_sleep - start_sleep) / 1000) < seconds) {
+            end_sleep = getMs();
             delayMs(100);
             doServices();
         }
@@ -244,14 +287,13 @@ void goToSleep (uint16 seconds) {
 
 void putchar(char c) {
     uart1TxSendByte(c);
-    if (usbEnabled)
+    if(!usb_off) {
         usbComTxSendByte(c);
+    }
 }
 
-void swap_channel(uint8 channel, uint8 newFSCTRL0)
-{
-    do
-    {
+void swap_channel(uint8 channel, uint8 newFSCTRL0) {
+    do {
         RFST = 4;   //SIDLE
     } while (MARCSTATE != 0x01);
 
@@ -260,104 +302,201 @@ void swap_channel(uint8 channel, uint8 newFSCTRL0)
     RFST = 2;   //RX
 }
 
-int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
-    uint32 start = getMs();
+uint32 get_packet_fixed_channel_timed(Dexcom_packet* pkt, uint8 XDATA channel, uint32 wait_time) {
+    uint32 start_time_packet = 0;
     uint8 XDATA * packet = 0;
-    int XDATA nRet = 0;
-    static uint8 XDATA lastpktxid = 64;
-    uint8 txid = 0;
-    if(channel >= NUM_CHANNELS) {
-        return -1;
-    }
+    uint8 XDATA txid = 0;
+    uint32 waited_for = 0;
+    start_time_packet = getMs();
     swap_channel(nChannels[channel], fOffset[channel]);
+    if(wait_time == 0) { wait_time = five_minutes; }
 
-    while (!milliseconds || (getMs() - start) < milliseconds) {
-        doServices();
+    while(getMs() - start_time_packet < wait_time) {
         if (packet = radioQueueRxCurrentPacket()) {
             uint8 XDATA len = packet[0];
+            waited_for = getMs() - start_time_packet;
 
-            if(radioCrcPassed()) {
+            memcpy(pkt, packet, min8(len+2, sizeof(Dexcom_packet)));
+            pkt->txId -= channel;
+
+            if(pkt->src_addr == dex_tx_id || dex_tx_id == 0 || only_listen_for_my_transmitter == 0) {
                 fOffset[channel] += FREQEST;
-                memcpy(pkt, packet, min8(len+2, sizeof(Dexcom_packet)));
-
-                if(pkt->src_addr == dex_tx_id || dex_tx_id == 0 || only_listen_for_my_transmitter == 0) {
-                    pkt->txId -= channel;
-                    txid = (pkt->txId & 0xFC) >> 2;
-
-                    if(txid != lastpktxid) {
-                        nRet = 1;
-                        lastpktxid = txid;
-                    }
+                txid = (pkt->txId & 0xFC) >> 2;
+                if(txid != lasttxid) {
+                    lasttxid = txid;
+                    radioQueueRxDoneWithPacket();
+                    return waited_for;
                 }
             }
             radioQueueRxDoneWithPacket();
-            return nRet;
         }
-    }
-    return nRet;
-}
-
-int get_packet(Dexcom_packet* pPkt) {
-    int XDATA delay = 0;
-    int XDATA nChannel = 0;
-    for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
-        switch(WaitForPacket(delay, pPkt, nChannel)) {
-        case 1:
-            return 1;
-        case 0:
-            continue;
-        case -1:
-            return 0;
-        }
-        delay = 500;
+        doServices();
     }
     return 0;
 }
 
+uint32 get_packet_fixed_channel(Dexcom_packet* pPkt, uint8 XDATA nChannel) {
+    return get_packet_fixed_channel_timed(pPkt, nChannel, (five_minutes + (20 * 1000)));
+}
+
+uint32 get_packet(Dexcom_packet* pPkt) {
+    uint32 XDATA time_elapsed = 0;
+
+    yellow_on();
+    if (time_elapsed = get_packet_fixed_channel_timed(pPkt, 0, should_wait_first)) {
+        yellow_off();
+        return time_elapsed;
+    }
+    channel_drift = 1;
+    red_on();
+    if (time_elapsed = get_packet_fixed_channel_timed(pPkt, 3, should_wait_next)) {
+        yellow_off();
+        red_off();
+        return time_elapsed;
+    }
+    yellow_off();
+    return 0;
+}
+
+
+uint8 SetRFParam(unsigned char XDATA* addr, uint8 val) {
+    *addr = val;
+    return 1;
+}
 
 void configBt() {
     uartEnable();
-    printf("AT+NAMEDexDrip2");
+    printf("AT+NAMEDexTEST");
     uartDisable();
 }
 
+void rest(uint32 rest_time) {
+    red_on();
+    if(rest_time < 10) {
+        rest_time = 10;
+    } else if (rest_time > (5 * 60)) {
+        rest_time = (5 * 60) - 30;
+    }
+    RFST = 4;
+    delayMs(5000);
+    goToSleep(rest_time);
+    USBPOW = 1;
+    USBCIE = 0b0111;
+    radioMacInit();
+    MCSM1 = 0;
+    radioMacStrobe();
+    red_off();
+}
+
 void main() {
-    uint8 XDATA ch = 0;
-    uint16 XDATA cnt = 0;
+    BIT entered_loop = 0;
     systemInit();
-    channel_select = 1;
-    channel_number = 0;
 
     initUart1();
     P1DIR |= 0x08; // RTS
-    makeAllOutputs();
+    /*makeAllOutputs();*/
 
     delayMs(4000);
     configBt();
-    dex_tx_id= asciiToDexcomSrc(transmitter_id);
+    dex_tx_id= asciiToDexcomSrc(dexcom_transmitter_id);
     delayMs(4000);
 
     radioQueueInit();
-    radioQueueAllowCrcErrors = 1;
     MCSM1 = 0;
+    do_timing_setup = 1;
 
+    rest(10);
     while(1) {
+        uint32 timer = 0;
         Dexcom_packet Pkt;
-        memset(&Pkt, 0, sizeof(Dexcom_packet));
-        boardService();
-        if(!get_packet(&Pkt))
-            continue;
+        if (do_timing_setup && entered_loop) { do_timing_setup = 1; }
+        entered_loop = 1;
+        // if do_timing_setup == 0, timings seem alright, just search for packets using what we know!
+        // if do_timing_setup == 1, setup all our timings
+        // if do_timing_setup == 2, start timings over again
+        // if do_timing_setup == 3, try to reset wake time to address time drift
 
-        print_packet(&Pkt);
+        if (do_timing_setup == 1) {
+            rest(10);
+            memset(&Pkt, 0, sizeof(Dexcom_packet));
+            if (get_packet_fixed_channel(&Pkt, 0)) {
+                print_packet(&Pkt);
+            } else {
+                do_timing_setup = 2;
+            }
+        }
 
-        RFST = 4;
-        delayMs(80);
-        doServices();
-        goToSleep(270);
-        USBPOW = 1;
-        USBCIE = 0b0111;
-        radioMacInit();
-        MCSM1 = 0;
-        radioMacStrobe();
+        if (do_timing_setup == 1) {
+            rest(100);
+            memset(&Pkt, 0, sizeof(Dexcom_packet));
+            if (timer = get_packet_fixed_channel(&Pkt, 0)) {
+                initial_wait = 100 + (timer / 1000) - 15;
+                print_packet(&Pkt);
+            } else {
+                do_timing_setup = 2;
+            }
+            timer = 0;
+        }
+
+    //add to default sleep, then waitV on channel 4
+        if (do_timing_setup == 1) {
+            rest(initial_wait);
+            memset(&Pkt, 0, sizeof(Dexcom_packet));
+
+            if (timer = get_packet_fixed_channel(&Pkt, 3)) {
+                should_wait_first = timer - 1000;
+                should_wait_next = timer + 5000;
+                print_packet(&Pkt);
+            } else {
+                do_timing_setup = 2;
+            }
+            timer = 0;
+        }
+
+    //reset our timings to get back to channel 1
+        if (do_timing_setup == 1) {
+            rest(initial_wait);
+            memset(&Pkt, 0, sizeof(Dexcom_packet));
+
+            if (get_packet_fixed_channel(&Pkt, 0)) {
+                print_packet(&Pkt);
+                do_timing_setup = 0;
+            } else {
+                do_timing_setup = 2;
+            }
+        }
+        //
+    // Alright, Heres the main loop
+        while(do_timing_setup == 0) {
+            rest(initial_wait);
+            memset(&Pkt, 0, sizeof(Dexcom_packet));
+
+            if(get_packet(&Pkt)) {
+                print_packet(&Pkt);
+            }
+
+            if(channel_drift == 1) {
+                do_timing_setup = 3;
+                been_there_done_that++;
+                channel_drift = 0;
+            }
+        }
+
+        if (do_timing_setup == 3 && been_there_done_that == 0) {
+            rest(10);
+            memset(&Pkt, 0, sizeof(Dexcom_packet));
+
+            if (get_packet_fixed_channel(&Pkt, 0)) {
+                print_packet(&Pkt);
+                do_timing_setup = 0;
+            } else {
+                do_timing_setup = 2;
+            }
+        }
+
+        if (do_timing_setup == 3 && been_there_done_that > 1) {
+            been_there_done_that = 0;
+            do_timing_setup = 1;
+        }
     }
 }
