@@ -39,7 +39,7 @@ wixel back into bootloader mode.
  * If you do not already have sdcc, you will need to do the following (not sure? open a terminal and run `sdcc -v` if you get the error `sdcc: command not found` then you need to install it!
   * Open a new terminal (if you cant find terminal, just search for it in spotlight) then run the following commands (just coppy and paste this whole big ol thing)
   * `curl -O http://sourceforge.net/projects/sdcc/files/sdcc-macosx/3.4.0/sdcc-3.4.0-universal-apple-macosx.tar.bz2 -L; tar xjf sdcc-3.4.0-universal-apple-macosx.tar.bz2; cd sdcc-3.4.0; cp -r -n -v * /usr/local`
-    * If that last command gave you a bunch of lines saying permission denied at the end, you can try with sudo (note that you dont want to use sudo unless you absolutely have to) Now just run `sudo cp -r * /usr/local` it should ask for your password, just type in your macs password and hit enter (Note that you will not see anything while typing the password)
+    * If that last command gave you a bunch of lines saying permission denied at the end, you can try with sudo (note that you dont want to use sudo unless you absolutely have to) Now just run `sudo cp -r -n -v * /usr/local` it should ask for your password, just type in your macs password and hit enter (Note that you will not see anything while typing the password)
   * Cool, now if you run `sdcc -v` you should see something like `SDCC : mcs51/z80/z180....`
   
  * Now back to our wixel app!
