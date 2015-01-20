@@ -355,6 +355,7 @@ uint32 get_packet(Dexcom_packet* pPkt) {
         return time_elapsed;
     }
     if (time_elapsed = get_packet_fixed_channel_timed(pPkt, 3, should_wait_fourth)) {
+        channel_drift = 1;
         yellow_off();
         return time_elapsed;
     }
@@ -486,6 +487,7 @@ void main() {
             }
             timer = 0;
         }
+
     //add to default sleep, then waitV on channel 4
         if (do_timing_setup == 1) {
             rest(initial_wait);
@@ -494,7 +496,7 @@ void main() {
             if (timer = get_packet_fixed_channel(&Pkt, 3)) {
                 should_wait_first = (first_wait + second_wait) / 2;
                 should_wait_second = (second_wait + third_wait) / 2;
-                should_wait_third = (third_wait + timer) / 2;
+                should_wait_third = ((third_wait + timer) / 2 - 50);
                 should_wait_fourth = (timer - should_wait_third) + 8000;
                 print_packet(&Pkt);
             } else {
@@ -515,7 +517,7 @@ void main() {
                 do_timing_setup = 2;
             }
         }
-        //
+
     // Alright, Heres the main loop
         while(!do_timing_setup) {
             rest(initial_wait);
@@ -536,7 +538,7 @@ void main() {
         }
 
         if (do_timing_setup == 3 && been_there_done_that == 0) {
-            rest(200);
+            rest(150);
             memset(&Pkt, 0, sizeof(Dexcom_packet));
 
             if (get_packet_fixed_channel(&Pkt, 0)) {
