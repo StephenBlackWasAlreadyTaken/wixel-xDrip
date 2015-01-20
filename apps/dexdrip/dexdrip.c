@@ -45,12 +45,12 @@
 //                           0 = false, 1 = true                                                    //
 static const char XDATA dexcom_transmitter_id[] = "66ENF";                                          //
 static volatile BIT only_listen_for_my_transmitter = 1;                                             //
-BIT do_lights = 1;                                                                                  //
+static volatile BIT do_lights = 1;                                                                  //
+static volatile BIT adjust_offset = 0;                                                              //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
-BIT adjust_offset = 0;
 // Dont Change anything from here on in unless you know what your doing (Or just want to have funzies!
 uint32 asciiToDexcomSrc(char *addr);
 uint32 getSrcValue(char srcVal);
@@ -68,11 +68,10 @@ uint32 should_wait_first = 0;
 uint32 should_wait_second = 0;
 uint32 should_wait_third = 0;
 uint32 should_wait_fourth = 0;
+int32 channel_drift = 0;
 
 // STATE VARIABLES
 uint8 do_timing_setup = 1;
-uint8 been_there_done_that = 0;
-uint32 channel_drift = 0;
 BIT usb_off = 0;
 
 typedef struct _Dexcom_packet {
@@ -113,11 +112,11 @@ void yellow_off() {
 void uartEnable() {
     green_on();
     U1UCR |= 0x40; //CTS/RTS ON
-    delayMs(4000);
+    delayMs(2000);
 }
 
 void uartDisable() {
-    delayMs(4000);
+    delayMs(2000);
     U1UCR &= ~0x40; //CTS/RTS Off
     U1CSR &= ~0x40; // Recevier disable
     green_off();
@@ -338,26 +337,24 @@ uint32 get_packet_fixed_channel(Dexcom_packet* pPkt, uint8 nChannel) {
 }
 
 uint32 get_packet(Dexcom_packet* pPkt) {
-    uint32 time_elapsed = 0;
-
+    uint32 start_full_scan = getMs();
     yellow_on();
-    if (time_elapsed = get_packet_fixed_channel_timed(pPkt, 0, should_wait_first)) {
+
+    if (get_packet_fixed_channel_timed(pPkt, 0, (should_wait_first - channel_drift))) {
         yellow_off();
-        return time_elapsed;
+        return start_full_scan - getMs();
     }
-    channel_drift = 1;
-    if (time_elapsed = get_packet_fixed_channel_timed(pPkt, 1, should_wait_second)) {
+    if (get_packet_fixed_channel_timed(pPkt, 1, should_wait_second)) {
         yellow_off();
-        return time_elapsed;
+        return start_full_scan - getMs();
     }
-    if (time_elapsed = get_packet_fixed_channel_timed(pPkt, 2, should_wait_third)) {
+    if (get_packet_fixed_channel_timed(pPkt, 2, should_wait_third)) {
         yellow_off();
-        return time_elapsed;
+        return start_full_scan - getMs();
     }
-    if (time_elapsed = get_packet_fixed_channel_timed(pPkt, 3, should_wait_fourth)) {
-        channel_drift = 1;
+    if (get_packet_fixed_channel_timed(pPkt, 3, should_wait_fourth)) {
         yellow_off();
-        return time_elapsed;
+        return start_full_scan - getMs();
     }
     yellow_off();
     return 0;
@@ -495,9 +492,10 @@ void main() {
 
             if (timer = get_packet_fixed_channel(&Pkt, 3)) {
                 should_wait_first = (first_wait + second_wait) / 2;
-                should_wait_second = (second_wait + third_wait) / 2;
-                should_wait_third = ((third_wait + timer) / 2 - 50);
-                should_wait_fourth = (timer - should_wait_third) + 8000;
+                should_wait_second = ((second_wait + third_wait) / 2) - should_wait_first;
+                should_wait_third = ((third_wait + timer) / 2) - should_wait_second;
+                should_wait_fourth = 3000;
+                channel_drift = 0;
                 print_packet(&Pkt);
             } else {
                 do_timing_setup = 2;
@@ -520,38 +518,17 @@ void main() {
 
     // Alright, Heres the main loop
         while(!do_timing_setup) {
+            timer = 0;
             rest(initial_wait);
             memset(&Pkt, 0, sizeof(Dexcom_packet));
 
-            if(get_packet(&Pkt)) {
+            if(timer = get_packet(&Pkt)) {
+                channel_drift = timer - first_wait;
+                if(channel_drift < 0) { channel_drift = 0; }
                 print_packet(&Pkt);
             } else {
                 do_timing_setup = 2;
-                channel_drift = 0;
             }
-
-            if(channel_drift == 1) {
-                do_timing_setup = 3;
-                been_there_done_that++;
-                channel_drift = 0;
-            }
-        }
-
-        if (do_timing_setup == 3 && been_there_done_that == 0) {
-            rest(150);
-            memset(&Pkt, 0, sizeof(Dexcom_packet));
-
-            if (get_packet_fixed_channel(&Pkt, 0)) {
-                print_packet(&Pkt);
-                do_timing_setup = 0;
-            } else {
-                do_timing_setup = 2;
-            }
-        }
-
-        if (do_timing_setup == 3 && been_there_done_that > 1) {
-            been_there_done_that = 0;
-            do_timing_setup = 1;
         }
     }
 }
