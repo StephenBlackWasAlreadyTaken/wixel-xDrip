@@ -46,7 +46,7 @@
 static const char XDATA dexcom_transmitter_id[] = "66ENF";                                          //
 static volatile BIT only_listen_for_my_transmitter = 1;                                             //
 static volatile BIT do_lights = 1;                                                                  //
-static volatile BIT adjust_offset = 0;                                                              //
+static volatile BIT adjust_offset = 1;                                                              //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -57,22 +57,22 @@ uint32 getSrcValue(char srcVal);
 volatile uint32 dex_tx_id;
 #define NUM_CHANNELS        (4)
 static uint8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
+static uint8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
 static uint32 XDATA five_minutes = 300000;
 // TIMING VARIABLES
 uint32 initial_wait = 0;
 uint32 first_wait = 0;
 uint32 second_wait = 0;
-uint32 third_wait = 0;
 uint32 should_wait_first = 0;
 uint32 should_wait_second = 0;
 uint32 should_wait_third = 0;
-uint32 should_wait_fourth = 0;
-int32 channel_drift = 0;
+uint32 channel_drift = 0;
 
 // STATE VARIABLES
 uint8 do_timing_setup = 1;
 BIT usb_off = 0;
+BIT fourth_channel_catch = 0;
 
 typedef struct _Dexcom_packet {
     uint8   len;
@@ -112,14 +112,21 @@ void yellow_off() {
 void uartEnable() {
     green_on();
     U1UCR |= 0x40; //CTS/RTS ON
-    delayMs(2000);
+    delayMs(3000);
 }
 
 void uartDisable() {
-    delayMs(2000);
+    delayMs(3000);
     U1UCR &= ~0x40; //CTS/RTS Off
     U1CSR &= ~0x40; // Recevier disable
     green_off();
+}
+
+void reset_offset() {
+    uint8 i;
+    for(i = 0; i < 4; i++) {
+        fOffset[i] = defaultfOffset[i];
+    }
 }
 
 int8 getPacketRSSI(Dexcom_packet* p) {
@@ -310,7 +317,7 @@ uint32 get_packet_fixed_channel_timed(Dexcom_packet* pkt, uint8 channel, uint32 
     uint32 waited_for = 0;
     start_time_packet = getMs();
     swap_channel(nChannels[channel], fOffset[channel]);
-    if(!wait_time) { wait_time = five_minutes; }
+    if(!wait_time || wait_time > five_minutes) { wait_time = five_minutes; }
 
     while(getMs() - start_time_packet < wait_time) {
         if (packet = radioQueueRxCurrentPacket()) {
@@ -339,6 +346,7 @@ uint32 get_packet_fixed_channel(Dexcom_packet* pPkt, uint8 nChannel) {
 uint32 get_packet(Dexcom_packet* pPkt) {
     uint32 start_full_scan = getMs();
     yellow_on();
+    fourth_channel_catch = 0;
 
     if (get_packet_fixed_channel_timed(pPkt, 0, (should_wait_first - channel_drift))) {
         yellow_off();
@@ -352,7 +360,8 @@ uint32 get_packet(Dexcom_packet* pPkt) {
         yellow_off();
         return start_full_scan - getMs();
     }
-    if (get_packet_fixed_channel_timed(pPkt, 3, should_wait_fourth)) {
+    if (get_packet_fixed_channel_timed(pPkt, 3, 8000)) {
+        fourth_channel_catch = 1;
         yellow_off();
         return start_full_scan - getMs();
     }
@@ -380,7 +389,7 @@ void rest(uint32 rest_time) {
         rest_time = (5 * 60) - 30;
     }
     RFST = 4;
-    delayMs(6000);
+    delayMs(3000);
     goToSleep(rest_time);
     USBPOW = 1;
     USBCIE = 0b0111;
@@ -398,10 +407,10 @@ void main() {
     P1DIR |= 0x08; // RTS
     /*makeAllOutputs();*/
 
-    delayMs(4000);
+    delayMs(3000);
     configBt();
     dex_tx_id= asciiToDexcomSrc(dexcom_transmitter_id);
-    delayMs(4000);
+    delayMs(3000);
 
     radioQueueInit();
     MCSM1 = 0;
@@ -419,9 +428,9 @@ void main() {
         // if do_timing_setup == 0, timings seem alright, just search for packets using what we know!
         // if do_timing_setup == 1, setup all our timings
         // if do_timing_setup == 2, start timings over again
-        // if do_timing_setup == 3, try to reset wake time to address time drift
 
         if (do_timing_setup == 1) {
+            reset_offset();
             rest(10);
             memset(&Pkt, 0, sizeof(Dexcom_packet));
             if (get_packet_fixed_channel(&Pkt, 0)) {
@@ -435,7 +444,7 @@ void main() {
             rest(150);
             memset(&Pkt, 0, sizeof(Dexcom_packet));
             if (timer = get_packet_fixed_channel(&Pkt, 0)) {
-                initial_wait = 150 + (timer / 1000) - 25;
+                initial_wait = 150 + (timer / 1000) - 30;
                 print_packet(&Pkt);
             } else {
                 do_timing_setup = 2;
@@ -477,25 +486,13 @@ void main() {
             memset(&Pkt, 0, sizeof(Dexcom_packet));
 
             if (timer = get_packet_fixed_channel(&Pkt, 2)) {
-                third_wait = timer;
-                print_packet(&Pkt);
-            } else {
-                do_timing_setup = 2;
-            }
-            timer = 0;
-        }
-
-    //add to default sleep, then waitV on channel 4
-        if (do_timing_setup == 1) {
-            rest(initial_wait);
-            memset(&Pkt, 0, sizeof(Dexcom_packet));
-
-            if (timer = get_packet_fixed_channel(&Pkt, 3)) {
-                should_wait_first = (first_wait + second_wait) / 2;
-                should_wait_second = ((second_wait + third_wait) / 2) - should_wait_first;
-                should_wait_third = ((third_wait + timer) / 2) - should_wait_second;
-                should_wait_fourth = 3000;
+                should_wait_first = first_wait + 150;
+                should_wait_second = second_wait - should_wait_first + 150;
+                should_wait_third = timer - should_wait_second + 50;
                 channel_drift = 0;
+                if(should_wait_first > five_minutes || should_wait_second > five_minutes || should_wait_third > five_minutes) {
+                    do_timing_setup = 2;
+                }
                 print_packet(&Pkt);
             } else {
                 do_timing_setup = 2;
@@ -517,14 +514,21 @@ void main() {
         }
 
     // Alright, Heres the main loop
-        while(!do_timing_setup) {
+        if(!do_timing_setup) {
             timer = 0;
             rest(initial_wait);
             memset(&Pkt, 0, sizeof(Dexcom_packet));
 
             if(timer = get_packet(&Pkt)) {
-                channel_drift = timer - first_wait;
-                if(channel_drift < 0) { channel_drift = 0; }
+                if(fourth_channel_catch) { do_timing_setup = 2; }
+                if(timer > first_wait) {
+                    channel_drift = timer - first_wait;
+                } else {
+                    channel_drift = 0;
+                }
+                if(timer > five_minutes) {
+                    do_timing_setup = 0;
+                }
                 print_packet(&Pkt);
             } else {
                 do_timing_setup = 2;
