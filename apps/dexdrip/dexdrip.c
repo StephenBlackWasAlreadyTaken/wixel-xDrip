@@ -38,6 +38,7 @@ radio_channel: See description in radio_link.h.
 static XDATA const char transmitter_id[] = "ABCDE";                                                 //
 static volatile BIT only_listen_for_my_transmitter = 0;                                             //
 static volatile BIT status_lights = 1;                                                              //
+static volatile BIT is_BLE = 1;                                                                     //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -191,9 +192,23 @@ uint32 getSrcValue(char srcVal) {
     }
     return i & 0xFF;
 }
+
 void print_packet(Dexcom_packet* pPkt) {
+    char params[30];
+    int x;
+    memset(params, 0, sizeof(params));
+    sprintf(params, "%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(0)));
+
+    /* strlen doesn't seem to work */
+    for (x = 0; x < 30; x++)
+        if (params[x] == 0)
+            break;
+
     uartEnable();
-    printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(0)));
+    if (is_BLE)
+        printf("%s", params);
+    else
+        printf("%d %s", x, params);
     uartDisable();
 }
 
@@ -384,7 +399,8 @@ void main() {
     setADCInputs();
 
     delayMs(1000);
-    configBt();
+    if (is_BLE)
+        configBt();
     dex_tx_id= asciiToDexcomSrc(transmitter_id);
     delayMs(1000);
 
