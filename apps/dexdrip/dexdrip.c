@@ -181,7 +181,7 @@ uint32 getSrcValue(char srcVal) {
 }
 void print_packet(Dexcom_packet* pPkt) {
     uartEnable();
-    printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(5)));
+    printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(0)));
     uartDisable();
 }
 
