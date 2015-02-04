@@ -41,18 +41,17 @@ static volatile BIT only_listen_for_my_transmitter = 0;                         
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-extern XDATA int32 channel_number = 0;
 static XDATA volatile int start_channel = 0;
-extern volatile BIT channel_select = 0;
 uint32 XDATA asciiToDexcomSrc(char *addr);
 uint32 XDATA getSrcValue(char srcVal);
-volatile XDATA uint32 dex_tx_id;
+volatile uint32 dex_tx_id;
 #define NUM_CHANNELS        (4)
-static XDATA int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
+static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
-static XDATA uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
+static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
+static uint16 waitTimes[NUM_CHANNELS] = { 4000, 500, 500, 4000 };
 BIT usb = 1;
-uint32 XDATA delay = 0;
+BIT needsTimingCalibration = 1;
 
 typedef struct _Dexcom_packet {
     uint8   len;
@@ -209,12 +208,12 @@ ISR (ST, 0) {
 }
 
 void goToSleep (uint16 seconds) {
-    unsigned char XDATA temp;
+    unsigned char temp;
 
     if(!usbPowerPresent()) {
         if(usb) {
             usb = 0;
-            delay = 0;
+            needsTimingCalibration = 1;
         }
 
         adcSetMillivoltCalibration(adcReadVddMillivolts());
@@ -242,11 +241,11 @@ void goToSleep (uint16 seconds) {
         uint32 end = getMs();
         if(!usb) {
             usb = 1;
-            delay = 0;
+            needsTimingCalibration = 1;
         }
         usbDeviceState = USB_STATE_POWERED;
         enableUsbPullup();
-        while(((end-start)/1000)<seconds) {
+        while(((end-start)/1000)<(seconds + 5)) {
             end = getMs();
             LED_RED( ((getMs()/1000) % 2) == 0 );
             delayMs(100);
@@ -277,11 +276,11 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
     uint32 start = getMs();
     uint8 XDATA * packet = 0;
     int XDATA nRet = 0;
-    LED_YELLOW(1);
     swap_channel(nChannels[channel], fOffset[channel]);
 
     while (!milliseconds || (getMs() - start) < milliseconds) {
         doServices();
+        LED_YELLOW( ((getMs()/1000) % 2) == 0 );
         if (packet = radioQueueRxCurrentPacket()) {
             uint8 XDATA len = packet[0];
             fOffset[channel] += FREQEST;
@@ -322,29 +321,41 @@ void set_lights(int chan_catch){
             break;
         }
 }
+int get_packet_delayed(Dexcom_packet* pPkt) {
+    set_lights(5);
+    switch(WaitForPacket(0, pPkt, 0)) {
+    case 1:
+        needsTimingCalibration = 0;
+        set_lights(0);
+        return 1;
+    case 0:
+        return 0;
+    }
+    return 0;
+}
 
-int get_packet(Dexcom_packet* pPkt) {
+int get_packet_standard(Dexcom_packet* pPkt) {
     int XDATA nChannel = 0;
     set_lights(5);
     for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
-        if(nChannel == 3){
-            delay = 1000;
-        }
-        switch(WaitForPacket(delay, pPkt, nChannel)) {
+        switch(WaitForPacket(waitTimes[nChannel], pPkt, nChannel)) {
         case 1:
-            delay = 500;
             set_lights(nChannel);
             return 1;
         case 0:
             continue;
-        case -1:
-            return 0;
         }
-        delay = 500;
     }
-    delay = 0;
+    needsTimingCalibration = 1;
     rest_offsets();
     return 0;
+}
+
+int get_packet(Dexcom_packet* pPkt) {
+    if(needsTimingCalibration) {
+        return get_packet_delayed(pPkt);
+    }
+    return get_packet_standard(pPkt);
 }
 
 void setADCInputs() {
@@ -358,21 +369,17 @@ void configBt() {
 }
 
 void main() {
-    uint8 XDATA ch = 0;
-    uint16 XDATA cnt = 0;
     systemInit();
-    channel_select = 1;
-    channel_number = 0;
-
     initUart1();
     P1DIR |= 0x08; // RTS
+
     makeAllOutputs();
     setADCInputs();
 
-    delayMs(4000);
+    delayMs(1000);
     configBt();
     dex_tx_id= asciiToDexcomSrc(transmitter_id);
-    delayMs(4000);
+    delayMs(1000);
 
     radioQueueInit();
     MCSM1 = 0;
@@ -389,7 +396,7 @@ void main() {
         RFST = 4;
         delayMs(100);
         doServices();
-        goToSleep(270);
+        goToSleep(265);
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
