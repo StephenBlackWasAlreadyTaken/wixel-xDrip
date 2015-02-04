@@ -49,7 +49,7 @@ volatile uint32 dex_tx_id;
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
-static uint16 waitTimes[NUM_CHANNELS] = { 4000, 500, 500, 4000 };
+static uint16 waitTimes[NUM_CHANNELS] = { 4000, 200, 200, 4000 };
 BIT usb = 1;
 BIT needsTimingCalibration = 1;
 
@@ -396,7 +396,9 @@ void main() {
         RFST = 4;
         delayMs(100);
         doServices();
-        goToSleep(265);
+        goToSleep(263); // Reduce this until we are just on the cusp of missing on the first channels
+        //265 seemed a little too long still
+        //261 seemed a little too short
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
