@@ -49,6 +49,7 @@ uint32 XDATA getSrcValue(char srcVal);
 volatile XDATA uint32 dex_tx_id;
 #define NUM_CHANNELS        (4)
 static XDATA int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
+static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
 BIT usb = 1;
 uint32 XDATA delay = 0;
@@ -70,16 +71,16 @@ typedef struct _Dexcom_packet {
 } Dexcom_packet;
 
 void uartEnable() {
+    LED_GREEN(1);
     U1UCR |= 0x40; //CTS/RTS ON
     delayMs(1000);
 }
 
 void uartDisable() {
-    LED_GREEN(1);
-    delayMs(2000);
+    delayMs(1000);
     U1UCR &= ~0x40; //CTS/RTS Off
-    LED_GREEN(0);
     U1CSR &= ~0x40; // Recevier disable
+    LED_GREEN(0);
 }
 
 int8 getPacketRSSI(Dexcom_packet* p) {
@@ -147,8 +148,7 @@ void dexcom_src_to_ascii(uint32 src, char addr[6]) {
     addr[5] = 0;
 }
 
-void doServices()
-{
+void doServices() {
     if(usbPowerPresent()) {
         boardService();
         usbComService();
@@ -178,16 +178,22 @@ uint32 getSrcValue(char srcVal) {
     return i & 0xFF;
 }
 void print_packet(Dexcom_packet* pPkt) {
-    adcSetMillivoltCalibration(adcReadVddMillivolts());
     uartEnable();
-    printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(5)));
+    printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(0)));
     uartDisable();
 }
 
 void makeAllOutputs() {
     int XDATA i;
-    for (i=0; i < 16; i++) {
+    for (i=6; i < 16; i++) { // in the future, this should be set to only the channels being used for output, and add the one for input
         setDigitalOutput(i, LOW);
+    }
+}
+
+void rest_offsets() {
+    int XDATA i;
+    for(i=0; i<4; i++) {
+        fOffset[i] = defaultfOffset[i];
     }
 }
 
@@ -210,6 +216,8 @@ void goToSleep (uint16 seconds) {
             usb = 0;
             delay = 0;
         }
+
+        adcSetMillivoltCalibration(adcReadVddMillivolts());
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
@@ -269,44 +277,63 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
     uint32 start = getMs();
     uint8 XDATA * packet = 0;
     int XDATA nRet = 0;
-    static uint8 XDATA lastpktxid = 64;
-    uint8 txid = 0;
-    if(channel >= NUM_CHANNELS) {
-        return -1;
-    }
+    LED_YELLOW(1);
     swap_channel(nChannels[channel], fOffset[channel]);
 
     while (!milliseconds || (getMs() - start) < milliseconds) {
         doServices();
         if (packet = radioQueueRxCurrentPacket()) {
             uint8 XDATA len = packet[0];
+            fOffset[channel] += FREQEST;
+            memcpy(pkt, packet, min8(len+2, sizeof(Dexcom_packet)));
 
-            if(radioCrcPassed()) {
-                fOffset[channel] += FREQEST;
-                memcpy(pkt, packet, min8(len+2, sizeof(Dexcom_packet)));
-
-                if(pkt->src_addr == dex_tx_id || dex_tx_id == 0 || only_listen_for_my_transmitter == 0) {
-                    pkt->txId -= channel;
-                    txid = (pkt->txId & 0xFC) >> 2;
-
-                    if(txid != lastpktxid) {
-                        nRet = 1;
-                        lastpktxid = txid;
-                    }
-                }
+            if(pkt->src_addr == dex_tx_id || dex_tx_id == 0 || only_listen_for_my_transmitter == 0) {
+                pkt->txId -= channel;
+                nRet = 1;
             }
             radioQueueRxDoneWithPacket();
+            LED_YELLOW(0);
             return nRet;
         }
     }
+    LED_YELLOW(0);
     return nRet;
+}
+
+void set_lights(int chan_catch){
+        switch(chan_catch) {
+        case 0:
+            LED_GREEN(1);
+            break;
+        case 1:
+            LED_RED(1);
+            break;
+        case 2:
+            LED_YELLOW(1);
+            break;
+        case 3:
+            LED_RED(1);
+            LED_YELLOW(1);
+            break;
+        case 5:
+            LED_GREEN(0);
+            LED_RED(0);
+            LED_YELLOW(0);
+            break;
+        }
 }
 
 int get_packet(Dexcom_packet* pPkt) {
     int XDATA nChannel = 0;
+    set_lights(5);
     for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
+        if(nChannel == 3){
+            delay = 1000;
+        }
         switch(WaitForPacket(delay, pPkt, nChannel)) {
         case 1:
+            delay = 500;
+            set_lights(nChannel);
             return 1;
         case 0:
             continue;
@@ -315,9 +342,14 @@ int get_packet(Dexcom_packet* pPkt) {
         }
         delay = 500;
     }
+    delay = 0;
+    rest_offsets();
     return 0;
 }
 
+void setADCInputs() {
+    P0INP=0; //set pull resistors on pins 0_0 - 0_5 to low
+}
 
 void configBt() {
     uartEnable();
@@ -335,6 +367,7 @@ void main() {
     initUart1();
     P1DIR |= 0x08; // RTS
     makeAllOutputs();
+    setADCInputs();
 
     delayMs(4000);
     configBt();
@@ -342,7 +375,6 @@ void main() {
     delayMs(4000);
 
     radioQueueInit();
-    radioQueueAllowCrcErrors = 1;
     MCSM1 = 0;
 
     while(1) {
