@@ -50,9 +50,9 @@ volatile uint32 dex_tx_id;
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
-static uint16 waitTimes[NUM_CHANNELS] = { 2000, 100, 100, 8000 };
+static uint32 waitTimes[NUM_CHANNELS] = { 2500, 100, 100, 2000 };
 //Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
-static uint16 delayedWaitTimes[NUM_CHANNELS] = { 0, 500, 500, 500 };
+static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 500, 500, 500 };
 BIT usb = 1;
 BIT needsTimingCalibration = 1;
 
@@ -230,28 +230,30 @@ void goToSleep (uint16 seconds) {
             usb = 0;
             needsTimingCalibration = 1;
         }
-        if(!needsTimingCalibration) {
-            adcSetMillivoltCalibration(adcReadVddMillivolts());
-            IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
-            WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
-
-            /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
-            SLEEP |= 0x01;                  // SLEEP.MODE = PM2
-
-
-            disableUsbPullup();
-            usbDeviceState = USB_STATE_DETACHED;
-
-            WORCTRL |= 0x04;  // Reset
-            temp = WORTIME0;
-            while (temp == WORTIME0) {};
-            temp = WORTIME0;
-            while (temp == WORTIME0) {};
-            WORCTRL |= 0x03; // 2^5 periods
-            WOREVT1 = (seconds >> 8);
-            WOREVT0 = (seconds & 0xff);
-            PCON |= 0x01; // PCON.IDLE = 1;
+        if(needsTimingCalibration) {
+            seconds = 1;
         }
+
+        adcSetMillivoltCalibration(adcReadVddMillivolts());
+        IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
+        WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
+
+        /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
+        SLEEP |= 0x01;                  // SLEEP.MODE = PM2
+
+
+        disableUsbPullup();
+        usbDeviceState = USB_STATE_DETACHED;
+
+        WORCTRL |= 0x04;  // Reset
+        temp = WORTIME0;
+        while (temp == WORTIME0) {};
+        temp = WORTIME0;
+        while (temp == WORTIME0) {};
+        WORCTRL |= 0x03; // 2^5 periods
+        WOREVT1 = (seconds >> 8);
+        WOREVT0 = (seconds & 0xff);
+        PCON |= 0x01; // PCON.IDLE = 1;
     } else {
         if(!usb) {
             usb = 1;
@@ -279,10 +281,12 @@ void swap_channel(uint8 channel, uint8 newFSCTRL0) {
 }
 
 void strobe_radio(int radio_chan) {
+    LED_RED(1);
     radioMacInit();
     MCSM1 = 0;
     radioMacStrobe();
     swap_channel(nChannels[radio_chan], fOffset[radio_chan]);
+    LED_RED(0);
 }
 
 int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
@@ -294,7 +298,7 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
 
     while (!milliseconds || (getMs() - start) < milliseconds) {
         i++;
-        if(!(i % 50000)) {
+        if(!(i % 10000)) {
             strobe_radio(channel);
         }
         doServices();
@@ -321,35 +325,29 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
 void set_lights(int chan_catch){
     if(status_lights) {
         switch(chan_catch) {
-        case 0:
-            break;
         case 1:
             LED_RED(1);
-            break;
         case 2:
             LED_YELLOW(1);
-            break;
         case 3:
             LED_RED(1);
             LED_YELLOW(1);
-            break;
         case 5:
             LED_GREEN(0);
             LED_RED(0);
             LED_YELLOW(0);
-            break;
         }
     }
 }
 
-uint16 delayFor(int wait_chan) {
+uint32 delayFor(int wait_chan) {
     if(needsTimingCalibration) {
         return delayedWaitTimes[wait_chan];
     }
     return waitTimes[wait_chan];
 }
 
-int get_packet(Dexcom_packet* pPkt) {
+BIT get_packet(Dexcom_packet* pPkt) {
     int nChannel = 0;
     set_lights(5);
     for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
@@ -398,15 +396,14 @@ void main() {
         Dexcom_packet Pkt;
         memset(&Pkt, 0, sizeof(Dexcom_packet));
         boardService();
-        if(!get_packet(&Pkt))
-            continue;
-
-        print_packet(&Pkt);
+        if(get_packet(&Pkt)) {
+            print_packet(&Pkt);
+        }
 
         RFST = 4;
         delayMs(100);
         doServices();
-        goToSleep(261); // Reduce this until we are just on the cusp of missing on the first channels
+        goToSleep(260); // Reduce this until we are just on the cusp of missing on the first channels
         //265 seemed a little too long still
         //261 seemed a little too short
         //263 seemed pretty good, first packet loss was after three hours, then missed a few of them before getting into a good groove
