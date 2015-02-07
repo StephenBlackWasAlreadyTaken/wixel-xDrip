@@ -22,13 +22,9 @@ Its easy!
 your needs
   * Likely you will want to enter your actual transmitter id (Should only be numbers and **CAPITAL LETTERS** , and set
 `only_listen_to_my_transmitter` to 1.
-
-  * Leaving `usbEnabled` at `1` and `do_close_usb` to `0` will allow you to listen for updates from your
-dexcom over usb, handy for debugging, also it will let you reload files onto
-your wixel with ease.
-setting `usbEnabled` to `0` and `do_close_usb` to `1` will result in better battery life, but you loose
-the ability to listen for updates over usb AND if you want to update the file
-on your wixel, you will need to jump the wixel into BootLoader mode. see
+  * Leaving `status_lights = 1` will blink the yellow light whenever it is searching for a packet (also you may notice a faint red blink when it strobes the radio) Setting it to zero will make it not blink (the red strobe will still happen though)
+  * The USB enabled and close options have been removed, instead the wixel will detect its usb state every time it wakes up to scan for packets. This means if you plug in the wixel your computer may not see it for a few minutes (5)   * if for some reason you still cant get your computer to recognize it, touch a wire from RST to GND
+  * If you did something crazy and locked up the bootloader, you will need to jump the wixel into BootLoader mode. see
 [this](http://www.pololu.com/docs/0J46/5.c) for instructions on getting the
 wixel back into bootloader mode.
 
