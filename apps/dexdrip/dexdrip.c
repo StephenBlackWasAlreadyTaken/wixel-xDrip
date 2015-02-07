@@ -292,20 +292,20 @@ void strobe_radio(int radio_chan) {
 int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
     uint32 start = getMs();
     uint8 * packet = 0;
-    uint16 i = 0;
+    uint32 i = 0;
     int nRet = 0;
     swap_channel(nChannels[channel], fOffset[channel]);
 
     while (!milliseconds || (getMs() - start) < milliseconds) {
         i++;
-        if(!(i % 10000)) {
+        if(!(i % 100000)) {
             strobe_radio(channel);
         }
         doServices();
         blink_yellow_led();
         if (packet = radioQueueRxCurrentPacket()) {
             uint8 len = packet[0];
-            fOffset[channel] += FREQEST;
+            /*fOffset[channel] += FREQEST;*/
             memcpy(pkt, packet, min8(len+2, sizeof(Dexcom_packet)));
             if(radioCrcPassed()) {
                 if(pkt->src_addr == dex_tx_id || dex_tx_id == 0 || only_listen_for_my_transmitter == 0) {
