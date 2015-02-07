@@ -10,8 +10,6 @@
 
   PLEASE BE SURE TO SET YOUR TRANSMITTER ID BELOW
 
-  Also, if you dont want to use usb, set it to zero and set close usb to 1
-
   == Parameters ==
 radio_channel: See description in radio_link.h.
 */
@@ -37,23 +35,26 @@ radio_channel: See description in radio_link.h.
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //..................SET THESE VARIABLES TO MEET YOUR NEEDS..........................................//
-static volatile BIT usbEnabled = 1;                                                                 //
 static XDATA const char transmitter_id[] = "ABCDE";                                                 //
-static volatile BIT do_close_usb = 1;                                                               //
 static volatile BIT only_listen_for_my_transmitter = 0;                                             //
+static volatile BIT status_lights = 1;                                                              //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-extern XDATA int32 channel_number = 0;
 static XDATA volatile int start_channel = 0;
-extern volatile BIT channel_select = 0;
 uint32 XDATA asciiToDexcomSrc(char *addr);
 uint32 XDATA getSrcValue(char srcVal);
-volatile XDATA uint32 dex_tx_id;
+volatile uint32 dex_tx_id;
 #define NUM_CHANNELS        (4)
-static XDATA int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
-static XDATA uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
+static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
+static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
+static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
+static uint32 waitTimes[NUM_CHANNELS] = { 2500, 100, 100, 2000 };
+//Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
+static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 500, 500, 500 };
+BIT usb = 1;
+BIT needsTimingCalibration = 1;
 
 typedef struct _Dexcom_packet {
     uint8   len;
@@ -72,16 +73,28 @@ typedef struct _Dexcom_packet {
 } Dexcom_packet;
 
 void uartEnable() {
+    LED_GREEN(1);
     U1UCR |= 0x40; //CTS/RTS ON
     delayMs(1000);
 }
 
 void uartDisable() {
-    LED_GREEN(1);
-    delayMs(2000);
+    delayMs(1000);
     U1UCR &= ~0x40; //CTS/RTS Off
-    LED_GREEN(0);
     U1CSR &= ~0x40; // Recevier disable
+    LED_GREEN(0);
+}
+
+void blink_yellow_led() {
+    if(status_lights) {
+        LED_YELLOW(((getMs()/1000) % 2));
+    }
+}
+
+void blink_red_led() {
+    if(status_lights) {
+        LED_RED(((getMs()/1000) % 2));
+    }
 }
 
 int8 getPacketRSSI(Dexcom_packet* p) {
@@ -149,9 +162,8 @@ void dexcom_src_to_ascii(uint32 src, char addr[6]) {
     addr[5] = 0;
 }
 
-void doServices()
-{
-    if(usbEnabled) {
+void doServices() {
+    if(usbPowerPresent()) {
         boardService();
         usbComService();
     }
@@ -173,7 +185,7 @@ uint32 asciiToDexcomSrc(char addr[6]) {
 }
 
 uint32 getSrcValue(char srcVal) {
-    uint8 XDATA i = 0;
+    uint8 i = 0;
     for(i = 0; i < 32; i++) {
         if (SrcNameTable[i]==srcVal) break;
     }
@@ -192,34 +204,46 @@ void makeAllOutputs() {
     }
 }
 
+void rest_offsets() {
+    int i;
+    for(i=0; i<4; i++) {
+        fOffset[i] = defaultfOffset[i];
+    }
+}
+
 ISR (ST, 0) {
     IRCON &= ~0x80;
     SLEEP &= ~0x02;
     IEN0 &= ~0x20;
     WORIRQ &= ~0x11;
     WORCTRL &= ~0x03;
-    if(do_close_usb && usbEnabled) {
+    if(usbPowerPresent()) {
          usbPoll();
     }
 }
 
 void goToSleep (uint16 seconds) {
-    unsigned char XDATA temp;
+    unsigned char temp;
 
-    if(!usbEnabled) {
-		adcSetMillivoltCalibration(adcReadVddMillivolts());
+    if(!usbPowerPresent()) {
+        if(usb) {
+            usb = 0;
+            needsTimingCalibration = 1;
+        }
+        if(needsTimingCalibration) {
+            seconds = 1;
+        }
+
+        adcSetMillivoltCalibration(adcReadVddMillivolts());
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
         /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
         SLEEP |= 0x01;                  // SLEEP.MODE = PM2
 
-        if(do_close_usb)
-        {
-            SLEEP &= ~(1<<7);
-            disableUsbPullup();
-            usbDeviceState = USB_STATE_DETACHED;
-        }
+
+        disableUsbPullup();
+        usbDeviceState = USB_STATE_DETACHED;
 
         WORCTRL |= 0x04;  // Reset
         temp = WORTIME0;
@@ -231,27 +255,23 @@ void goToSleep (uint16 seconds) {
         WOREVT0 = (seconds & 0xff);
         PCON |= 0x01; // PCON.IDLE = 1;
     } else {
-        uint32 start = getMs();
-        uint32 end = getMs();
-        while(((end-start)/1000)<seconds) {
-            end = getMs();
-            /*LED_RED( ((getMs()/1000) % 2) == 0 );*/
-            delayMs(100);
-            doServices();
+        if(!usb) {
+            usb = 1;
         }
+        usbDeviceState = USB_STATE_POWERED;
+        enableUsbPullup();
+        needsTimingCalibration = 1;
     }
 }
 
 void putchar(char c) {
     uart1TxSendByte(c);
-    if (usbEnabled)
+    if (usbPowerPresent())
         usbComTxSendByte(c);
 }
 
-void swap_channel(uint8 channel, uint8 newFSCTRL0)
-{
-    do
-    {
+void swap_channel(uint8 channel, uint8 newFSCTRL0) {
+    do {
         RFST = 4;   //SIDLE
     } while (MARCSTATE != 0x01);
 
@@ -260,57 +280,88 @@ void swap_channel(uint8 channel, uint8 newFSCTRL0)
     RFST = 2;   //RX
 }
 
+void strobe_radio(int radio_chan) {
+    LED_RED(1);
+    radioMacInit();
+    MCSM1 = 0;
+    radioMacStrobe();
+    swap_channel(nChannels[radio_chan], fOffset[radio_chan]);
+    LED_RED(0);
+}
+
 int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
     uint32 start = getMs();
-    uint8 XDATA * packet = 0;
-    int XDATA nRet = 0;
-    static uint8 XDATA lastpktxid = 64;
-    uint8 txid = 0;
-    if(channel >= NUM_CHANNELS) {
-        return -1;
-    }
+    uint8 * packet = 0;
+    uint32 i = 0;
+    int nRet = 0;
     swap_channel(nChannels[channel], fOffset[channel]);
 
     while (!milliseconds || (getMs() - start) < milliseconds) {
+        i++;
+        if(!(i % 100000)) {
+            strobe_radio(channel);
+        }
         doServices();
+        blink_yellow_led();
         if (packet = radioQueueRxCurrentPacket()) {
-            uint8 XDATA len = packet[0];
-
+            uint8 len = packet[0];
+            /*fOffset[channel] += FREQEST;*/
+            memcpy(pkt, packet, min8(len+2, sizeof(Dexcom_packet)));
             if(radioCrcPassed()) {
-                fOffset[channel] += FREQEST;
-                memcpy(pkt, packet, min8(len+2, sizeof(Dexcom_packet)));
-
                 if(pkt->src_addr == dex_tx_id || dex_tx_id == 0 || only_listen_for_my_transmitter == 0) {
                     pkt->txId -= channel;
-                    txid = (pkt->txId & 0xFC) >> 2;
-
-                    if(txid != lastpktxid) {
-                        nRet = 1;
-                        lastpktxid = txid;
-                    }
+                    nRet = 1;
                 }
             }
             radioQueueRxDoneWithPacket();
+            LED_YELLOW(0);
             return nRet;
         }
     }
+    LED_YELLOW(0);
     return nRet;
 }
 
-int get_packet(Dexcom_packet* pPkt) {
-    int XDATA delay = 0;
-    int XDATA nChannel = 0;
-    for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
-        switch(WaitForPacket(delay, pPkt, nChannel)) {
+void set_lights(int chan_catch){
+    if(status_lights) {
+        switch(chan_catch) {
         case 1:
+            LED_RED(1);
+        case 2:
+            LED_YELLOW(1);
+        case 3:
+            LED_RED(1);
+            LED_YELLOW(1);
+        case 5:
+            LED_GREEN(0);
+            LED_RED(0);
+            LED_YELLOW(0);
+        }
+    }
+}
+
+uint32 delayFor(int wait_chan) {
+    if(needsTimingCalibration) {
+        return delayedWaitTimes[wait_chan];
+    }
+    return waitTimes[wait_chan];
+}
+
+BIT get_packet(Dexcom_packet* pPkt) {
+    int nChannel = 0;
+    set_lights(5);
+    for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
+        switch(WaitForPacket(delayFor(nChannel), pPkt, nChannel)) {
+        case 1:
+            set_lights(nChannel);
+            needsTimingCalibration = 0;
             return 1;
         case 0:
             continue;
-        case -1:
-            return 0;
         }
-        delay = 500;
     }
+    needsTimingCalibration = 1;
+    /*rest_offsets();*/
     return 0;
 }
 
@@ -320,26 +371,22 @@ void setADCInputs() {
 
 void configBt() {
     uartEnable();
-    printf("AT+NAMEDexDrip2");
+    printf("AT+NAMEDexDrip");
     uartDisable();
 }
 
 void main() {
-    uint8 XDATA ch = 0;
-    uint16 XDATA cnt = 0;
     systemInit();
-    channel_select = 1;
-    channel_number = 0;
-
     initUart1();
     P1DIR |= 0x08; // RTS
+
     makeAllOutputs();
     setADCInputs();
 
-    delayMs(4000);
+    delayMs(1000);
     configBt();
     dex_tx_id= asciiToDexcomSrc(transmitter_id);
-    delayMs(4000);
+    delayMs(1000);
 
     radioQueueInit();
     radioQueueAllowCrcErrors = 1;
@@ -349,15 +396,19 @@ void main() {
         Dexcom_packet Pkt;
         memset(&Pkt, 0, sizeof(Dexcom_packet));
         boardService();
-        if(!get_packet(&Pkt))
-            continue;
-
-        print_packet(&Pkt);
+        if(get_packet(&Pkt)) {
+            print_packet(&Pkt);
+        }
 
         RFST = 4;
-        delayMs(80);
+        delayMs(100);
         doServices();
-        goToSleep(270);
+        goToSleep(260); // Reduce this until we are just on the cusp of missing on the first channels
+        //265 seemed a little too long still
+        //261 seemed a little too short
+        //263 seemed pretty good, first packet loss was after three hours, then missed a few of them before getting into a good groove
+        //Currently attempting to up the wait times on the channels and dial the sleep down to 261
+        //Now trying to drop the wait times a bit to make sure we can still hit channel 4 if we miss channel 1
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
