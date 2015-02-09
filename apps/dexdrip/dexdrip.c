@@ -50,7 +50,7 @@ volatile uint32 dex_tx_id;
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
-static uint32 waitTimes[NUM_CHANNELS] = { 2500, 100, 100, 2000 };
+static uint32 waitTimes[NUM_CHANNELS] = { 30000, 100, 100, 4000 };
 //Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
 static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 500, 500, 500 };
 BIT usb = 1;
@@ -222,6 +222,11 @@ ISR (ST, 0) {
     }
 }
 
+void killWithWatchdog() {
+    WDCTL = (WDCTL & ~0x03) | 0x00;
+    WDCTL = (WDCTL & ~0x04) | 0x00;
+}
+
 void goToSleep (uint16 seconds) {
     unsigned char temp;
 
@@ -239,8 +244,7 @@ void goToSleep (uint16 seconds) {
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
         /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
-        SLEEP |= 0x01;                  // SLEEP.MODE = PM2
-
+        SLEEP |= 0x01;                  // SLEEP.MODE = PM1
 
         disableUsbPullup();
         usbDeviceState = USB_STATE_DETACHED;
@@ -293,19 +297,23 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
     uint32 start = getMs();
     uint8 * packet = 0;
     uint32 i = 0;
+    uint32 seven_minutes = 420000;
     int nRet = 0;
     swap_channel(nChannels[channel], fOffset[channel]);
 
     while (!milliseconds || (getMs() - start) < milliseconds) {
         i++;
-        if(!(i % 100000)) {
+        if(!(i % 10000)) {
             strobe_radio(channel);
         }
         doServices();
+        if((getMs() - start) > seven_minutes) {
+            killWithWatchdog();
+        }
         blink_yellow_led();
         if (packet = radioQueueRxCurrentPacket()) {
             uint8 len = packet[0];
-            /*fOffset[channel] += FREQEST;*/
+            fOffset[channel] += FREQEST;
             memcpy(pkt, packet, min8(len+2, sizeof(Dexcom_packet)));
             if(radioCrcPassed()) {
                 if(pkt->src_addr == dex_tx_id || dex_tx_id == 0 || only_listen_for_my_transmitter == 0) {
@@ -361,7 +369,7 @@ BIT get_packet(Dexcom_packet* pPkt) {
         }
     }
     needsTimingCalibration = 1;
-    /*rest_offsets();*/
+    killWithWatchdog();
     return 0;
 }
 
@@ -403,7 +411,7 @@ void main() {
         RFST = 4;
         delayMs(100);
         doServices();
-        goToSleep(260); // Reduce this until we are just on the cusp of missing on the first channels
+        goToSleep(262); // Reduce this until we are just on the cusp of missing on the first channels
         //265 seemed a little too long still
         //261 seemed a little too short
         //263 seemed pretty good, first packet loss was after three hours, then missed a few of them before getting into a good groove
