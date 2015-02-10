@@ -212,10 +212,13 @@ void rest_offsets() {
 }
 
 ISR (ST, 0) {
-    IRCON &= ~0x80;
-    SLEEP &= ~0x02;
+    /*IRCON &= ~0x80;*/
+    IRCON &= 0x7F;
+    /*SLEEP &= ~0x02;*/
+    SLEEP &= 0xFC;
     IEN0 &= ~0x20;
-    WORIRQ &= ~0x11;
+    /*WORIRQ &= ~0x11;*/
+    WORIRQ &= 0xFE;
     WORCTRL &= ~0x03;
     if(usbPowerPresent()) {
          usbPoll();
@@ -244,20 +247,26 @@ void goToSleep (uint16 seconds) {
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
         /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
-        SLEEP |= 0x01;                  // SLEEP.MODE = PM1
+        /*SLEEP |= 0x01;                  // SLEEP.MODE = PM1*/
 
         disableUsbPullup();
         usbDeviceState = USB_STATE_DETACHED;
 
+        SLEEP = (SLEEP & 0xFC) | 0x01;
+        __asm nop __endasm; __asm nop __endasm; __asm nop __endasm;
+
         WORCTRL |= 0x04;  // Reset
         temp = WORTIME0;
-        while (temp == WORTIME0) {};
+        while(temp == WORTIME0) {};
         temp = WORTIME0;
-        while (temp == WORTIME0) {};
+        while(temp == WORTIME0) {};
         WORCTRL |= 0x03; // 2^5 periods
         WOREVT1 = (seconds >> 8);
         WOREVT0 = (seconds & 0xff);
-        PCON |= 0x01; // PCON.IDLE = 1;
+        if(SLEEP & 0x03) {
+            PCON |= 0x01;
+            __asm nop __endasm;
+         }
     } else {
         if(!usb) {
             usb = 1;
