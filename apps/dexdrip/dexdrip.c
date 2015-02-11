@@ -50,7 +50,7 @@ volatile uint32 dex_tx_id;
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
-static uint32 waitTimes[NUM_CHANNELS] = { 30000, 100, 100, 4000 };
+static uint32 waitTimes[NUM_CHANNELS] = { 60000, 100, 100, 4000 };
 //Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
 static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 500, 500, 500 };
 BIT usb = 1;
@@ -212,12 +212,9 @@ void rest_offsets() {
 }
 
 ISR (ST, 0) {
-    /*IRCON &= ~0x80;*/
     IRCON &= 0x7F;
-    /*SLEEP &= ~0x02;*/
     SLEEP &= 0xFC;
     IEN0 &= ~0x20;
-    /*WORIRQ &= ~0x11;*/
     WORIRQ &= 0xFE;
     WORCTRL &= ~0x03;
     if(usbPowerPresent()) {
@@ -246,14 +243,8 @@ void goToSleep (uint16 seconds) {
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
-        /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
-        /*SLEEP |= 0x01;                  // SLEEP.MODE = PM1*/
-
         disableUsbPullup();
         usbDeviceState = USB_STATE_DETACHED;
-
-        SLEEP = (SLEEP & 0xFC) | 0x01;
-        __asm nop __endasm; __asm nop __endasm; __asm nop __endasm;
 
         WORCTRL |= 0x04;  // Reset
         temp = WORTIME0;
@@ -263,6 +254,12 @@ void goToSleep (uint16 seconds) {
         WORCTRL |= 0x03; // 2^5 periods
         WOREVT1 = (seconds >> 8);
         WOREVT0 = (seconds & 0xff);
+
+        SLEEP = (SLEEP & 0xFC) | 0x01;
+        __asm nop __endasm;
+        __asm nop __endasm;
+        __asm nop __endasm;
+
         if(SLEEP & 0x03) {
             PCON |= 0x01;
             __asm nop __endasm;
@@ -420,7 +417,7 @@ void main() {
         RFST = 4;
         delayMs(100);
         doServices();
-        goToSleep(262); // Reduce this until we are just on the cusp of missing on the first channels
+        goToSleep(260); // Reduce this until we are just on the cusp of missing on the first channels
         //265 seemed a little too long still
         //261 seemed a little too short
         //263 seemed pretty good, first packet loss was after three hours, then missed a few of them before getting into a good groove
