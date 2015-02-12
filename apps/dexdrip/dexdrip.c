@@ -50,18 +50,11 @@ volatile uint32 dex_tx_id;
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
-static uint32 waitTimes[NUM_CHANNELS] = { 3000, 500, 500, 500 };
+static uint32 waitTimes[NUM_CHANNELS] = { 10000, 500, 500, 500 };
 //Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
 static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 500, 500, 500 };
 BIT usb = 1;
 BIT needsTimingCalibration = 1;
-
-unsigned char XDATA PM2_BUF[7] = {0x06,0x06,0x06,0x06,0x06,0x06,0x04};
-unsigned char XDATA PM3_BUF[7] = {0x07,0x07,0x07,0x07,0x07,0x07,0x04};
-unsigned char XDATA dmaDesc[8] = {0x00,0x00,0xDF,0xBE,0x00,0x07,0x20,0x42};
-unsigned char storedDescHigh;
-unsigned char storedDescLow;
-
 
 typedef struct _Dexcom_packet {
     uint8   len;
@@ -215,14 +208,9 @@ void rest_offsets() {
 ISR (ST, 0) {
     IRCON &= 0x7F;
     SLEEP &= 0xFC;
-    /*LED_RED(0);*/
     IEN0 &= ~0x20;
     WORIRQ &= 0xFE;
     WORCTRL &= ~0x03;
-    MEMCTR &= ~0x02;
-    DMA0CFGL = storedDescLow;
-    DMA0CFGH = storedDescHigh;
-    DMAARM = 0x01;
     if(usbPowerPresent()) {
          usbPoll();
     }
@@ -236,8 +224,6 @@ void killWithWatchdog() {
 void goToSleep (uint16 seconds) {
     if(!usbPowerPresent()) {
         unsigned char temp;
-        storedDescHigh = DMA0CFGH;
-        storedDescLow = DMA0CFGL;
 
         if(usb) {
             usb = 0;
@@ -247,31 +233,19 @@ void goToSleep (uint16 seconds) {
             seconds = 1;
         }
 
-        DMAARM |= 0x81;
-        dmaDesc[0] = (unsigned int)& PM2_BUF >> 8;
-        dmaDesc[1] = (unsigned int)& PM2_BUF;
-        // // Associate the descriptor with DMA channel 0 and arm the DMA channel
-        DMA0CFGH = (unsigned int)&dmaDesc >> 8;
-        DMA0CFGL = (unsigned int)&dmaDesc;
-        DMAARM = 0x01; 
-
+        disableUsbPullup();
+        usbDeviceState = USB_STATE_DETACHED;
         adcSetMillivoltCalibration(adcReadVddMillivolts());
+
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
-        disableUsbPullup();
-        usbDeviceState = USB_STATE_DETACHED;
-
         WORCTRL |= 0x04;  // Reset
-        temp = WORTIME0;
-        while(temp == WORTIME0) {};
         temp = WORTIME0;
         while(temp == WORTIME0) {};
         WORCTRL |= 0x03; // 2^5 periods   <<<<<Find out where this came from!!>>>>>>
         WOREVT1 = (seconds >> 8);
         WOREVT0 = (seconds & 0xff);
-
-        /*LED_RED(1);*/
         MEMCTR |= 0x02;
         SLEEP = 0x06;
         __asm nop __endasm;
@@ -283,6 +257,8 @@ void goToSleep (uint16 seconds) {
             __asm orl 0x87, #0x01 __endasm;
             __asm nop __endasm;
          }
+        MEMCTR &= ~0x02;
+        DMAARM = 0x01;
     } else {
         if(!usb) {
             usb = 1;
@@ -415,7 +391,7 @@ void main() {
 
         RFST = 4;
         delayMs(100);
-        goToSleep(286); // Reduce this until we are just on the cusp of missing on the first channels
+        goToSleep(283); // Reduce this until we are just on the cusp of missing on the first channels
         // At 279 with powermode 3 we seemed to have about 8 seconds
         RFST = 4;
         USBPOW = 1;
