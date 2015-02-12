@@ -35,8 +35,8 @@ radio_channel: See description in radio_link.h.
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //..................SET THESE VARIABLES TO MEET YOUR NEEDS..........................................//
-static XDATA const char transmitter_id[] = "ABCDE";                                                 //
-static volatile BIT only_listen_for_my_transmitter = 0;                                             //
+static XDATA const char transmitter_id[] = "66ENF";                                                 //
+static volatile BIT only_listen_for_my_transmitter = 1;                                             //
 static volatile BIT status_lights = 1;                                                              //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -50,11 +50,18 @@ volatile uint32 dex_tx_id;
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
-static uint32 waitTimes[NUM_CHANNELS] = { 60000, 100, 100, 4000 };
+static uint32 waitTimes[NUM_CHANNELS] = { 3000, 500, 500, 500 };
 //Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
 static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 500, 500, 500 };
 BIT usb = 1;
 BIT needsTimingCalibration = 1;
+
+unsigned char XDATA PM2_BUF[7] = {0x06,0x06,0x06,0x06,0x06,0x06,0x04};
+unsigned char XDATA PM3_BUF[7] = {0x07,0x07,0x07,0x07,0x07,0x07,0x04};
+unsigned char XDATA dmaDesc[8] = {0x00,0x00,0xDF,0xBE,0x00,0x07,0x20,0x42};
+unsigned char storedDescHigh;
+unsigned char storedDescLow;
+
 
 typedef struct _Dexcom_packet {
     uint8   len;
@@ -87,13 +94,7 @@ void uartDisable() {
 
 void blink_yellow_led() {
     if(status_lights) {
-        LED_YELLOW(((getMs()/1000) % 2));
-    }
-}
-
-void blink_red_led() {
-    if(status_lights) {
-        LED_RED(((getMs()/1000) % 2));
+        LED_YELLOW(((getMs()/250) % 2));//Blink Quarter seconds
     }
 }
 
@@ -214,9 +215,14 @@ void rest_offsets() {
 ISR (ST, 0) {
     IRCON &= 0x7F;
     SLEEP &= 0xFC;
+    /*LED_RED(0);*/
     IEN0 &= ~0x20;
     WORIRQ &= 0xFE;
     WORCTRL &= ~0x03;
+    MEMCTR &= ~0x02;
+    DMA0CFGL = storedDescLow;
+    DMA0CFGH = storedDescHigh;
+    DMAARM = 0x01;
     if(usbPowerPresent()) {
          usbPoll();
     }
@@ -228,9 +234,11 @@ void killWithWatchdog() {
 }
 
 void goToSleep (uint16 seconds) {
-    unsigned char temp;
-
     if(!usbPowerPresent()) {
+        unsigned char temp;
+        storedDescHigh = DMA0CFGH;
+        storedDescLow = DMA0CFGL;
+
         if(usb) {
             usb = 0;
             needsTimingCalibration = 1;
@@ -238,6 +246,14 @@ void goToSleep (uint16 seconds) {
         if(needsTimingCalibration) {
             seconds = 1;
         }
+
+        DMAARM |= 0x81;
+        dmaDesc[0] = (unsigned int)& PM2_BUF >> 8;
+        dmaDesc[1] = (unsigned int)& PM2_BUF;
+        // // Associate the descriptor with DMA channel 0 and arm the DMA channel
+        DMA0CFGH = (unsigned int)&dmaDesc >> 8;
+        DMA0CFGL = (unsigned int)&dmaDesc;
+        DMAARM = 0x01; 
 
         adcSetMillivoltCalibration(adcReadVddMillivolts());
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
@@ -251,17 +267,20 @@ void goToSleep (uint16 seconds) {
         while(temp == WORTIME0) {};
         temp = WORTIME0;
         while(temp == WORTIME0) {};
-        WORCTRL |= 0x03; // 2^5 periods
+        WORCTRL |= 0x03; // 2^5 periods   <<<<<Find out where this came from!!>>>>>>
         WOREVT1 = (seconds >> 8);
         WOREVT0 = (seconds & 0xff);
 
-        SLEEP = (SLEEP & 0xFC) | 0x01;
+        /*LED_RED(1);*/
+        MEMCTR |= 0x02;
+        SLEEP = 0x06;
         __asm nop __endasm;
         __asm nop __endasm;
         __asm nop __endasm;
-
         if(SLEEP & 0x03) {
-            PCON |= 0x01;
+            __asm mov 0xD7, #0x01 __endasm;
+            __asm nop __endasm;
+            __asm orl 0x87, #0x01 __endasm;
             __asm nop __endasm;
          }
     } else {
@@ -291,12 +310,12 @@ void swap_channel(uint8 channel, uint8 newFSCTRL0) {
 }
 
 void strobe_radio(int radio_chan) {
-    LED_RED(1);
+    /*LED_RED(1);*/
     radioMacInit();
     MCSM1 = 0;
     radioMacStrobe();
     swap_channel(nChannels[radio_chan], fOffset[radio_chan]);
-    LED_RED(0);
+    /*LED_RED(0);*/
 }
 
 int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
@@ -336,24 +355,6 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
     return nRet;
 }
 
-void set_lights(int chan_catch){
-    if(status_lights) {
-        switch(chan_catch) {
-        case 1:
-            LED_RED(1);
-        case 2:
-            LED_YELLOW(1);
-        case 3:
-            LED_RED(1);
-            LED_YELLOW(1);
-        case 5:
-            LED_GREEN(0);
-            LED_RED(0);
-            LED_YELLOW(0);
-        }
-    }
-}
-
 uint32 delayFor(int wait_chan) {
     if(needsTimingCalibration) {
         return delayedWaitTimes[wait_chan];
@@ -363,11 +364,9 @@ uint32 delayFor(int wait_chan) {
 
 BIT get_packet(Dexcom_packet* pPkt) {
     int nChannel = 0;
-    set_lights(5);
     for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
         switch(WaitForPacket(delayFor(nChannel), pPkt, nChannel)) {
         case 1:
-            set_lights(nChannel);
             needsTimingCalibration = 0;
             return 1;
         case 0:
@@ -416,13 +415,9 @@ void main() {
 
         RFST = 4;
         delayMs(100);
-        doServices();
-        goToSleep(260); // Reduce this until we are just on the cusp of missing on the first channels
-        //265 seemed a little too long still
-        //261 seemed a little too short
-        //263 seemed pretty good, first packet loss was after three hours, then missed a few of them before getting into a good groove
-        //Currently attempting to up the wait times on the channels and dial the sleep down to 261
-        //Now trying to drop the wait times a bit to make sure we can still hit channel 4 if we miss channel 1
+        goToSleep(286); // Reduce this until we are just on the cusp of missing on the first channels
+        // At 279 with powermode 3 we seemed to have about 8 seconds
+        RFST = 4;
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
