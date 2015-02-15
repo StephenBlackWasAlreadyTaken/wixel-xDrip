@@ -50,10 +50,9 @@ volatile uint32 dex_tx_id;
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
-static uint32 waitTimes[NUM_CHANNELS] = { 30000, 500, 500, 500 };
+static uint32 waitTimes[NUM_CHANNELS] = { 30000, 2000, 2000, 2000 };
 //Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
 static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 500, 500, 500 };
-BIT usb = 1;
 BIT needsTimingCalibration = 1;
 
 typedef struct _Dexcom_packet {
@@ -204,11 +203,12 @@ void rest_offsets() {
 }
 
 ISR (ST, 0) {
-    IRCON &= 0x7F;
-    SLEEP &= 0xFC;
+    IRCON &= ~0x80;
+    SLEEP &= ~0x06;
     IEN0 &= ~0x20;
-    WORIRQ &= 0xFE;
+    WORIRQ &= ~0x10;
     WORCTRL &= ~0x03;
+    U1UCR |= 0x80;
     if(usbPowerPresent()) {
          usbPoll();
     }
@@ -222,15 +222,6 @@ void killWithWatchdog() {
 void goToSleep (uint16 seconds) {
     if(!usbPowerPresent()) {
         unsigned char temp;
-
-        if(usb) {
-            usb = 0;
-            needsTimingCalibration = 1;
-        }
-        if(needsTimingCalibration) {
-            seconds = 1;
-        }
-
         disableUsbPullup();
         usbDeviceState = USB_STATE_DETACHED;
         adcSetMillivoltCalibration(adcReadVddMillivolts());
@@ -241,7 +232,7 @@ void goToSleep (uint16 seconds) {
         WORCTRL |= 0x04;  // Reset
         temp = WORTIME0;
         while(temp == WORTIME0) {};
-        WORCTRL |= 0x03; // 2^5 periods   <<<<<Find out where this came from!!>>>>>>
+        WORCTRL |= 0x03; // 2^5 periods
         WOREVT1 = (seconds >> 8);
         WOREVT0 = (seconds & 0xff);
 
@@ -252,18 +243,14 @@ void goToSleep (uint16 seconds) {
         __asm nop __endasm;
         __asm nop __endasm;
         __asm nop __endasm;
-        if(SLEEP & 0x03) {
-            __asm mov 0xD7, #0x01 __endasm;
-            __asm nop __endasm;
-            __asm orl 0x87, #0x01 __endasm;
-            __asm nop __endasm;
-         }
+        __asm mov 0xD7, #0x01 __endasm;
+        __asm nop __endasm;
+        __asm orl 0x87, #0x01 __endasm;
+        __asm nop __endasm;
+
         MEMCTR &= ~0x02;
         DMAARM = 0x01;
     } else {
-        if(!usb) {
-            usb = 1;
-        }
         usbDeviceState = USB_STATE_POWERED;
         enableUsbPullup();
         needsTimingCalibration = 1;
@@ -309,6 +296,7 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
         doServices();
         if((getMs() - start) > seven_minutes) {
             killWithWatchdog();
+            delayMs(2000);
         }
         blink_yellow_led();
         if (packet = radioQueueRxCurrentPacket()) {
@@ -350,6 +338,7 @@ BIT get_packet(Dexcom_packet* pPkt) {
     }
     needsTimingCalibration = 1;
     killWithWatchdog();
+    delayMs(2000);
     return 0;
 }
 
@@ -391,7 +380,6 @@ void main() {
         RFST = 4;
         delayMs(100);
         goToSleep(275); // Reduce this until we are just on the cusp of missing on the first channels
-        // At 279 with powermode 3 we seemed to have about 8 seconds
         RFST = 4;
         USBPOW = 1;
         USBCIE = 0b0111;
