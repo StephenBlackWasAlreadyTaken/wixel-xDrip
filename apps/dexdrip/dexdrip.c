@@ -40,12 +40,13 @@ radio_channel: See description in radio_link.h.
 //                           SET THESE VARIABLES TO MEET YOUR NEEDS                                 //
 //                                   1 = TRUE       0 = FALSE                                       //
 //                                                                                                  //
-  static XDATA const char transmitter_id[] = "66ENF";                                               //
+  static XDATA const char transmitter_id[] = "ABCDE";                                               //
 //                                                                                                  //
-  static volatile BIT only_listen_for_my_transmitter = 1; // 1 is recommended                       //
+  static volatile BIT only_listen_for_my_transmitter = 1;                                           //
+// 1 is recommended                                                                                 //
 //                                                                                                  //
-  static volatile BIT do_sleep = 1; // 0 is recommended for now (due to possible bugs               //
-// Currently do_sleep = 0; is recommended until we get the sleep mode interupts all figgured out    //
+  static volatile BIT do_sleep = 1;                                                                 //
+// 0 is recommended due to possible bugs                                                            //
 // if you care to test do_sleep = 1; please let me know how it works for you                        //
 //                                                                                                  //
   static volatile BIT status_lights = 1;                                                            //
@@ -264,7 +265,9 @@ void killWithWatchdog() {
 }
 
 void goToSleep (unsigned short seconds) {
+    adcSetMillivoltCalibration(adcReadVddMillivolts());
     makeAllOutputsLow();
+
     if((!usbPowerPresent()) && do_sleep) {
         unsigned char temp;
         unsigned char storedDescHigh, storedDescLow;
@@ -273,7 +276,6 @@ void goToSleep (unsigned short seconds) {
 
         sleepInit();
 
-        adcSetMillivoltCalibration(adcReadVddMillivolts());
         disableUsbPullup();
         usbDeviceState = USB_STATE_DETACHED;
         SLEEP &= ~(1<<7);
