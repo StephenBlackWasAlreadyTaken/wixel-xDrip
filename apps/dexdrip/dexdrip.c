@@ -34,16 +34,23 @@ radio_channel: See description in radio_link.h.
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 //..................SET THESE VARIABLES TO MEET YOUR NEEDS..........................................//
-static XDATA const char transmitter_id[] = "66ENF";                                                 //
-static volatile BIT only_listen_for_my_transmitter = 1; // 1 is recommended                          //
-static volatile BIT do_sleep = 0; // 0 is recommended for now (due to possible bugs                  //
+static XDATA const char transmitter_id[] = "ABCDE";                                                 //
+
+static volatile BIT only_listen_for_my_transmitter = 0; // 1 is recommended                         //
+
+static volatile BIT do_sleep = 0; // 0 is recommended for now (due to possible bugs                 //
 // Currently do_sleep = 0; is recommended until we get the sleep mode interupts all figgured out    //
 // if you care to test do_sleep = 1; please let me know how it works for you                        //
+
 static volatile BIT status_lights = 1;                                                              //
 // if status_lights = 1; the yellow light flashes while actively scanning                           //
 // if a light is flashing for more than 10 minutes straight, it may not be picking up your dex      //
 //..................................................................................................//
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
