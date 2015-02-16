@@ -34,11 +34,28 @@ radio_channel: See description in radio_link.h.
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
-//..................SET THESE VARIABLES TO MEET YOUR NEEDS..........................................//
-static XDATA const char transmitter_id[] = "ABCDE";                                                 //
-static volatile BIT only_listen_for_my_transmitter = 0;                                             //
-static volatile BIT status_lights = 1;                                                              //
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                                  //
+//                           SET THESE VARIABLES TO MEET YOUR NEEDS                                 //
+//                                   1 = TRUE       0 = FALSE                                       //
+//                                                                                                  //
+  static XDATA const char transmitter_id[] = "ABCDE";                                               //
+//                                                                                                  //
+  static volatile BIT only_listen_for_my_transmitter = 0; // 1 is recommended                       //
+//                                                                                                  //
+  static volatile BIT do_sleep = 0; // 0 is recommended for now (due to possible bugs               //
+// Currently do_sleep = 0; is recommended until we get the sleep mode interupts all figgured out    //
+// if you care to test do_sleep = 1; please let me know how it works for you                        //
+//                                                                                                  //
+  static volatile BIT status_lights = 1;                                                            //
+// if status_lights = 1; the yellow light flashes while actively scanning                           //
+// if a light is flashing for more than 10 minutes straight, it may not be picking up your dex      //
+//                                                                                                  //
+//                                                                                                  //
 //..................................................................................................//
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -50,10 +67,9 @@ volatile uint32 dex_tx_id;
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
-static uint32 waitTimes[NUM_CHANNELS] = { 30000, 100, 100, 4000 };
+static uint32 waitTimes[NUM_CHANNELS] = { 35000, 700, 700, 700 };
 //Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
-static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 500, 500, 500 };
-BIT usb = 1;
+static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 700, 700, 700 };
 BIT needsTimingCalibration = 1;
 
 typedef struct _Dexcom_packet {
@@ -73,7 +89,6 @@ typedef struct _Dexcom_packet {
 } Dexcom_packet;
 
 void uartEnable() {
-    LED_GREEN(1);
     U1UCR |= 0x40; //CTS/RTS ON
     delayMs(1000);
 }
@@ -82,18 +97,11 @@ void uartDisable() {
     delayMs(1000);
     U1UCR &= ~0x40; //CTS/RTS Off
     U1CSR &= ~0x40; // Recevier disable
-    LED_GREEN(0);
 }
 
 void blink_yellow_led() {
     if(status_lights) {
-        LED_YELLOW(((getMs()/1000) % 2));
-    }
-}
-
-void blink_red_led() {
-    if(status_lights) {
-        LED_RED(((getMs()/1000) % 2));
+        LED_YELLOW(((getMs()/500) % 2));//Blink half seconds
     }
 }
 
@@ -213,9 +221,9 @@ void rest_offsets() {
 
 ISR (ST, 0) {
     IRCON &= ~0x80;
-    SLEEP &= ~0x02;
+    SLEEP &= ~0x06;
     IEN0 &= ~0x20;
-    WORIRQ &= ~0x11;
+    WORIRQ &= ~0x10;
     WORCTRL &= ~0x03;
     if(usbPowerPresent()) {
          usbPoll();
@@ -224,47 +232,51 @@ ISR (ST, 0) {
 
 void killWithWatchdog() {
     WDCTL = (WDCTL & ~0x03) | 0x00;
-    WDCTL = (WDCTL & ~0x04) | 0x00;
+    WDCTL = (WDCTL & ~0x04) | 0x08;
 }
 
 void goToSleep (uint16 seconds) {
-    unsigned char temp;
-
-    if(!usbPowerPresent()) {
-        if(usb) {
-            usb = 0;
-            needsTimingCalibration = 1;
-        }
-        if(needsTimingCalibration) {
-            seconds = 1;
-        }
-
+    if((!usbPowerPresent()) && do_sleep) {
+        unsigned char temp;
+        disableUsbPullup();
+        usbDeviceState = USB_STATE_DETACHED;
         adcSetMillivoltCalibration(adcReadVddMillivolts());
+
         IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
         WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
 
-        /*SLEEP |= 0x02;                  // SLEEP.MODE = PM2*/
-        SLEEP |= 0x01;                  // SLEEP.MODE = PM1
-
-        disableUsbPullup();
-        usbDeviceState = USB_STATE_DETACHED;
-
         WORCTRL |= 0x04;  // Reset
         temp = WORTIME0;
-        while (temp == WORTIME0) {};
-        temp = WORTIME0;
-        while (temp == WORTIME0) {};
+        while(temp == WORTIME0) {};
+
         WORCTRL |= 0x03; // 2^5 periods
         WOREVT1 = (seconds >> 8);
         WOREVT0 = (seconds & 0xff);
-        PCON |= 0x01; // PCON.IDLE = 1;
+
+        temp = WORTIME0;
+        while(temp == WORTIME0) {};
+        MEMCTR |= 0x02;
+        SLEEP = 0x06;
+        __asm nop __endasm;
+        __asm nop __endasm;
+        __asm nop __endasm;
+        __asm mov 0xD7, #0x01 __endasm;
+        __asm nop __endasm;
+        __asm orl 0x87, #0x01 __endasm;
+        __asm nop __endasm;
+        MEMCTR &= ~0x02;
+        DMAARM = 0x01;
+
     } else {
-        if(!usb) {
-            usb = 1;
-        }
+        uint32 start_waiting = getMs();
+        uint32 milliseconds = seconds * 1000;
         usbDeviceState = USB_STATE_POWERED;
         enableUsbPullup();
-        needsTimingCalibration = 1;
+        while ((getMs() - start_waiting) < milliseconds) {
+            delayMs(50);
+            doServices();
+        }
+
     }
 }
 
@@ -285,12 +297,10 @@ void swap_channel(uint8 channel, uint8 newFSCTRL0) {
 }
 
 void strobe_radio(int radio_chan) {
-    LED_RED(1);
     radioMacInit();
     MCSM1 = 0;
     radioMacStrobe();
     swap_channel(nChannels[radio_chan], fOffset[radio_chan]);
-    LED_RED(0);
 }
 
 int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
@@ -303,12 +313,13 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
 
     while (!milliseconds || (getMs() - start) < milliseconds) {
         i++;
-        if(!(i % 10000)) {
+        if(!(i % 60000)) {
             strobe_radio(channel);
         }
         doServices();
         if((getMs() - start) > seven_minutes) {
             killWithWatchdog();
+            delayMs(2000);
         }
         blink_yellow_led();
         if (packet = radioQueueRxCurrentPacket()) {
@@ -330,24 +341,6 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
     return nRet;
 }
 
-void set_lights(int chan_catch){
-    if(status_lights) {
-        switch(chan_catch) {
-        case 1:
-            LED_RED(1);
-        case 2:
-            LED_YELLOW(1);
-        case 3:
-            LED_RED(1);
-            LED_YELLOW(1);
-        case 5:
-            LED_GREEN(0);
-            LED_RED(0);
-            LED_YELLOW(0);
-        }
-    }
-}
-
 uint32 delayFor(int wait_chan) {
     if(needsTimingCalibration) {
         return delayedWaitTimes[wait_chan];
@@ -357,11 +350,9 @@ uint32 delayFor(int wait_chan) {
 
 BIT get_packet(Dexcom_packet* pPkt) {
     int nChannel = 0;
-    set_lights(5);
     for(nChannel = start_channel; nChannel < NUM_CHANNELS; nChannel++) {
         switch(WaitForPacket(delayFor(nChannel), pPkt, nChannel)) {
         case 1:
-            set_lights(nChannel);
             needsTimingCalibration = 0;
             return 1;
         case 0:
@@ -370,6 +361,7 @@ BIT get_packet(Dexcom_packet* pPkt) {
     }
     needsTimingCalibration = 1;
     killWithWatchdog();
+    delayMs(2000);
     return 0;
 }
 
@@ -410,13 +402,8 @@ void main() {
 
         RFST = 4;
         delayMs(100);
-        doServices();
-        goToSleep(262); // Reduce this until we are just on the cusp of missing on the first channels
-        //265 seemed a little too long still
-        //261 seemed a little too short
-        //263 seemed pretty good, first packet loss was after three hours, then missed a few of them before getting into a good groove
-        //Currently attempting to up the wait times on the channels and dial the sleep down to 261
-        //Now trying to drop the wait times a bit to make sure we can still hit channel 4 if we miss channel 1
+        goToSleep(275); // Reduce this until we are just on the cusp of missing on the first channels
+        RFST = 4;
         USBPOW = 1;
         USBCIE = 0b0111;
         radioMacInit();
