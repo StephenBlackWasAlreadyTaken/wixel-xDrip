@@ -36,8 +36,13 @@ radio_channel: See description in radio_link.h.
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //..................SET THESE VARIABLES TO MEET YOUR NEEDS..........................................//
 static XDATA const char transmitter_id[] = "66ENF";                                                 //
-static volatile BIT only_listen_for_my_transmitter = 1;                                             //
+static volatile BIT only_listen_for_my_transmitter = 1; // 1 is recommended                          //
+static volatile BIT do_sleep = 0; // 0 is recommended for now (due to possible bugs                  //
+// Currently do_sleep = 0; is recommended until we get the sleep mode interupts all figgured out    //
+// if you care to test do_sleep = 1; please let me know how it works for you                        //
 static volatile BIT status_lights = 1;                                                              //
+// if status_lights = 1; the yellow light flashes while actively scanning                           //
+// if a light is flashing for more than 10 minutes straight, it may not be picking up your dex      //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -50,9 +55,9 @@ volatile uint32 dex_tx_id;
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
-static uint32 waitTimes[NUM_CHANNELS] = { 30000, 2000, 2000, 2000 };
+static uint32 waitTimes[NUM_CHANNELS] = { 35000, 700, 700, 700 };
 //Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
-static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 500, 500, 500 };
+static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 700, 700, 700 };
 BIT needsTimingCalibration = 1;
 
 typedef struct _Dexcom_packet {
@@ -208,7 +213,6 @@ ISR (ST, 0) {
     IEN0 &= ~0x20;
     WORIRQ &= ~0x10;
     WORCTRL &= ~0x03;
-    U1UCR |= 0x80;
     if(usbPowerPresent()) {
          usbPoll();
     }
@@ -216,11 +220,11 @@ ISR (ST, 0) {
 
 void killWithWatchdog() {
     WDCTL = (WDCTL & ~0x03) | 0x00;
-    WDCTL = (WDCTL & ~0x04) | 0x00;
+    WDCTL = (WDCTL & ~0x04) | 0x08;
 }
 
 void goToSleep (uint16 seconds) {
-    if(!usbPowerPresent()) {
+    if((!usbPowerPresent()) && do_sleep) {
         unsigned char temp;
         disableUsbPullup();
         usbDeviceState = USB_STATE_DETACHED;
@@ -232,6 +236,7 @@ void goToSleep (uint16 seconds) {
         WORCTRL |= 0x04;  // Reset
         temp = WORTIME0;
         while(temp == WORTIME0) {};
+
         WORCTRL |= 0x03; // 2^5 periods
         WOREVT1 = (seconds >> 8);
         WOREVT0 = (seconds & 0xff);
@@ -247,13 +252,19 @@ void goToSleep (uint16 seconds) {
         __asm nop __endasm;
         __asm orl 0x87, #0x01 __endasm;
         __asm nop __endasm;
-
         MEMCTR &= ~0x02;
         DMAARM = 0x01;
+
     } else {
+        uint32 start_waiting = getMs();
+        uint32 milliseconds = seconds * 1000;
         usbDeviceState = USB_STATE_POWERED;
         enableUsbPullup();
-        needsTimingCalibration = 1;
+        while ((getMs() - start_waiting) < milliseconds) {
+            delayMs(50);
+            doServices();
+        }
+
     }
 }
 
@@ -290,7 +301,7 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
 
     while (!milliseconds || (getMs() - start) < milliseconds) {
         i++;
-        if(!(i % 50000)) {
+        if(!(i % 60000)) {
             strobe_radio(channel);
         }
         doServices();
