@@ -40,11 +40,11 @@ radio_channel: See description in radio_link.h.
 //                           SET THESE VARIABLES TO MEET YOUR NEEDS                                 //
 //                                   1 = TRUE       0 = FALSE                                       //
 //                                                                                                  //
-  static XDATA const char transmitter_id[] = "ABCDE";                                               //
+  static XDATA const char transmitter_id[] = "66ENF";                                               //
 //                                                                                                  //
-  static volatile BIT only_listen_for_my_transmitter = 0; // 1 is recommended                       //
+  static volatile BIT only_listen_for_my_transmitter = 1; // 1 is recommended                       //
 //                                                                                                  //
-  static volatile BIT do_sleep = 0; // 0 is recommended for now (due to possible bugs               //
+  static volatile BIT do_sleep = 1; // 0 is recommended for now (due to possible bugs               //
 // Currently do_sleep = 0; is recommended until we get the sleep mode interupts all figgured out    //
 // if you care to test do_sleep = 1; please let me know how it works for you                        //
 //                                                                                                  //
@@ -71,6 +71,11 @@ static uint32 waitTimes[NUM_CHANNELS] = { 35000, 700, 700, 700 };
 //Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
 static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 700, 700, 700 };
 BIT needsTimingCalibration = 1;
+static uint8 save_IEN0;
+static uint8 save_IEN1;
+static uint8 save_IEN2;
+unsigned char XDATA PM2_BUF[7] = {0x06,0x06,0x06,0x06,0x06,0x06,0x04};
+unsigned char XDATA dmaDesc[8] = {0x00,0x00,0xDF,0xBE,0x00,0x07,0x20,0x42};
 
 typedef struct _Dexcom_packet {
     uint8   len;
@@ -87,6 +92,34 @@ typedef struct _Dexcom_packet {
     int8    RSSI;
     uint8   LQI;
 } Dexcom_packet;
+
+void sleepInit(void) {
+   WORIRQ  |= (1<<4); // Enable Event0 interrupt
+}
+
+ISR(ST, 1) {
+   // Clear IRCON.STIF (Sleep Timer CPU interrupt flag)
+    IRCON &= 0x7F;
+    // Clear WORIRQ.EVENT0_FLAG (Sleep Timer peripheral interrupt flag)
+    // This is required for the CC111xFx/CC251xFx only!
+    WORIRQ &= 0xFE;
+
+    SLEEP &= 0xFC; // Not required when resuming from PM0; Clear SLEEP.MODE[1:0]
+}
+
+void switchToRCOSC(void) {
+    // Power up [HS RCOSC] (SLEEP.OSC_PD = 0)
+    SLEEP &= ~0x04;
+    // Wait until [HS RCOSC] is stable (SLEEP.HFRC_STB = 1)
+    while ( ! (SLEEP & 0x20) );
+    // Switch system clock source to HS RCOSC (CLKCON.OSC = 1),
+    // and set max CPU clock speed (CLKCON.CLKSPD = 1).
+    CLKCON = (CLKCON & ~0x07) | 0x40 | 0x01;
+    // Wait until system clock source has actually changed (CLKCON.OSC = 1)
+    while ( !(CLKCON & 0x40) );
+    // Power down [HS XOSC] (SLEEP.OSC_PD = 1)
+    SLEEP |= 0x04;
+}
 
 void uartEnable() {
     U1UCR |= 0x40; //CTS/RTS ON
@@ -211,6 +244,12 @@ void makeAllOutputs() {
         setDigitalOutput(i, LOW);
     }
 }
+void makeAllOutputsLow() {
+    int XDATA i;
+    for (i=0; i < 16; i++) { // in the future, this should be set to only the channels being used for output, and add the one for input
+        setDigitalOutput(i, LOW);
+    }
+}
 
 void rest_offsets() {
     int i;
@@ -219,53 +258,89 @@ void rest_offsets() {
     }
 }
 
-ISR (ST, 0) {
-    IRCON &= ~0x80;
-    SLEEP &= ~0x06;
-    IEN0 &= ~0x20;
-    WORIRQ &= ~0x10;
-    WORCTRL &= ~0x03;
-    if(usbPowerPresent()) {
-         usbPoll();
-    }
-}
-
 void killWithWatchdog() {
     WDCTL = (WDCTL & ~0x03) | 0x00;
     WDCTL = (WDCTL & ~0x04) | 0x08;
 }
 
-void goToSleep (uint16 seconds) {
+void goToSleep (unsigned short seconds) {
+    makeAllOutputsLow();
     if((!usbPowerPresent()) && do_sleep) {
         unsigned char temp;
+        unsigned char storedDescHigh, storedDescLow;
+        BIT storedDma0Armed;
+        unsigned char storedIEN0, storedIEN1, storedIEN2;
+
+        sleepInit();
+
+        adcSetMillivoltCalibration(adcReadVddMillivolts());
         disableUsbPullup();
         usbDeviceState = USB_STATE_DETACHED;
-        adcSetMillivoltCalibration(adcReadVddMillivolts());
+        SLEEP &= ~(1<<7);
 
-        IEN0 |= 0x20; // Enable global ST interrupt [IEN0.STIE]
-        WORIRQ |= 0x10; // enable sleep timer interrupt [EVENT0_MASK]
+        WORCTRL |= 0x03; // 2^5 periods
+        switchToRCOSC();
+
+        storedDescHigh = DMA0CFGH;
+        storedDescLow = DMA0CFGL;
+        storedDma0Armed = DMAARM & 0x01;
+        DMAARM |= 0x81; // Abort transfers on DMA Channel 0; Set ABORT and DMAARM0
+        /*Update descriptor with correct source.*/
+        dmaDesc[0] = ((unsigned int)& PM2_BUF) >> 8;
+        dmaDesc[1] = (unsigned int)& PM2_BUF;
+
+        // Associate the descriptor with DMA channel 0 and arm the DMA channel
+        DMA0CFGH = ((unsigned int)&dmaDesc) >> 8;
+        DMA0CFGL = (unsigned int)&dmaDesc;
+        DMAARM = 0x01; // Arm Channel 0; DMAARM0
+
+        // save enabled interrupts
+        storedIEN0 = IEN0;
+        storedIEN1 = IEN1;
+        storedIEN2 = IEN2; 
+
+        // make sure interrupts aren't completely disabled
+        // and enable sleep timer interrupt
+        IEN0 |= 0xA0; // Set EA and STIE bits
+
+        // then disable all interrupts except the sleep timer
+        IEN0 &= 0xA0;
+        IEN1 &= ~0x3F;
+        IEN2 &= ~0x3F;
 
         WORCTRL |= 0x04;  // Reset
         temp = WORTIME0;
         while(temp == WORTIME0) {};
-
-        WORCTRL |= 0x03; // 2^5 periods
-        WOREVT1 = (seconds >> 8);
-        WOREVT0 = (seconds & 0xff);
+        WOREVT1 = seconds >> 8;
+        WOREVT0 = seconds;
 
         temp = WORTIME0;
         while(temp == WORTIME0) {};
+
         MEMCTR |= 0x02;
         SLEEP = 0x06;
         __asm nop __endasm;
         __asm nop __endasm;
         __asm nop __endasm;
-        __asm mov 0xD7, #0x01 __endasm;
-        __asm nop __endasm;
-        __asm orl 0x87, #0x01 __endasm;
-        __asm nop __endasm;
-        MEMCTR &= ~0x02;
-        DMAARM = 0x01;
+        if (SLEEP & 0x03) {
+            __asm mov 0xD7, #0x01 __endasm;
+            __asm nop __endasm;
+            __asm orl 0x87, #0x01 __endasm;
+            __asm nop __endasm;
+        }
+        // restore enabled interrupts
+        IEN0 = storedIEN0;
+        IEN1 = storedIEN1;
+        IEN2 = storedIEN2; 
+        // restore DMA descriptor
+        DMA0CFGH = storedDescHigh;
+        DMA0CFGL = storedDescLow;
+        if (storedDma0Armed) {
+            DMAARM |= 0x01; // Set DMA0ARM
+        }
+
+        // Switch back to high speed
+        boardClockInit();
 
     } else {
         uint32 start_waiting = getMs();
@@ -379,6 +454,7 @@ void main() {
     systemInit();
     initUart1();
     P1DIR |= 0x08; // RTS
+    sleepInit();
 
     makeAllOutputs();
     setADCInputs();
@@ -394,19 +470,38 @@ void main() {
 
     while(1) {
         Dexcom_packet Pkt;
+        uint8 savedPICTL = PICTL;
+        // save port 0 Interrupt Enable state.  This is a BIT value and equates to IEN1.POIE.
+        // This is probably redundant now, as we do all IEN registers in goToSleep.
+        BIT savedP0IE = P0IE;
+        uint8 savedP0SEL = P0SEL;
+        uint8 savedP0DIR = P0DIR;
+        uint8 savedP1SEL = P1SEL;
+        uint8 savedP1DIR = P1DIR;
         memset(&Pkt, 0, sizeof(Dexcom_packet));
         boardService();
+
         if(get_packet(&Pkt)) {
             print_packet(&Pkt);
         }
 
         RFST = 4;
         delayMs(100);
+        radioMacSleep();
         goToSleep(275); // Reduce this until we are just on the cusp of missing on the first channels
-        RFST = 4;
+        radioMacResume();
+        // restore all Port Interrupts we had prior to going to sleep. 
+        PICTL = savedPICTL;
+        // restore Port 0 Interrupt Enable state.  This is a BIT that equates to IEN1.P0IE.
+        // This is probably redundant now, as we already do this in ISR ST.
+        P0IE = savedP0IE;
+        P0SEL = savedP0SEL;
+        P0DIR = savedP0DIR;
+        P1SEL = savedP1SEL;
+        P1DIR = savedP1DIR;
+        makeAllOutputs();
         USBPOW = 1;
         USBCIE = 0b0111;
-        radioMacInit();
         MCSM1 = 0;
         radioMacStrobe();
     }
