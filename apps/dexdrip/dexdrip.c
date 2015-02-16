@@ -40,11 +40,11 @@ radio_channel: See description in radio_link.h.
 //                           SET THESE VARIABLES TO MEET YOUR NEEDS                                 //
 //                                   1 = TRUE       0 = FALSE                                       //
 //                                                                                                  //
-  static XDATA const char transmitter_id[] = "ABCDE";                                               //
+  static XDATA const char transmitter_id[] = "66ENF";                                               //
 //                                                                                                  //
-  static volatile BIT only_listen_for_my_transmitter = 0; // 1 is recommended                       //
+  static volatile BIT only_listen_for_my_transmitter = 1; // 1 is recommended                       //
 //                                                                                                  //
-  static volatile BIT do_sleep = 0; // 0 is recommended for now (due to possible bugs               //
+  static volatile BIT do_sleep = 1; // 0 is recommended for now (due to possible bugs               //
 // Currently do_sleep = 0; is recommended until we get the sleep mode interupts all figgured out    //
 // if you care to test do_sleep = 1; please let me know how it works for you                        //
 //                                                                                                  //
@@ -257,17 +257,6 @@ void rest_offsets() {
         fOffset[i] = defaultfOffset[i];
     }
 }
-
-/*ISR (ST, 0) {*/
-    /*IRCON &= ~0x80;*/
-    /*SLEEP &= ~0x06;*/
-    /*IEN0 &= ~0x20;*/
-    /*WORIRQ &= ~0x10;*/
-    /*WORCTRL &= ~0x03;*/
-    /*if(usbPowerPresent()) {*/
-         /*usbPoll();*/
-    /*}*/
-/*}*/
 
 void killWithWatchdog() {
     WDCTL = (WDCTL & ~0x03) | 0x00;
