@@ -58,6 +58,23 @@ void radioMacInit(void);
  * code to so it can use the new data. */
 void radioMacStrobe(void);
 
+/*! Shutdown the radio in preparation for sleep.
+ *
+ * This function sets a shutdown bit then triggers the strobe
+ * if there are tx or rx transactions that are close to completion
+ * they will be allowed to complete. The current radioMacState will
+ * be saved and will be started in that state when resumed.
+ *
+ * The function will spin wait till the radio state changes to IDLE. */
+void radioMacSleep(void);
+
+/*! Resume the radio operation after sleep.
+ *
+ * This function will resume operation of the radio
+ * The radio will start in the same state that it was in
+ * when it was suspended */
+void radioMacResume(void);
+
 /*! Sets up the radio to transmit a packet.
  *
  * \param packet A pointer to the packet to transmit.
