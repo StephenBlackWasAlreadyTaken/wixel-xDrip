@@ -351,6 +351,7 @@ void goToSleep (uint32 seconds) {
         if(!usbEnabled) {
             usbDeviceState = USB_STATE_POWERED;
             enableUsbPullup();
+            usbEnabled = 1;
         }
         delayMs(100);
         while((getMs() - start_waiting) < (seconds * 1000)) {
