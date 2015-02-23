@@ -355,7 +355,7 @@ void goToSleep (uint32 seconds) {
         }
         delayMs(100);
         while((getMs() - start_waiting) < (seconds * 1000)) {
-            delayMs(100);
+            delayMs(10);
             doServices();
         }
     }
