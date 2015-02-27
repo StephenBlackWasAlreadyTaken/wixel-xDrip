@@ -31,7 +31,8 @@ radio_channel: See description in radio_link.h.
 #include <string.h>
 #include <ctype.h>
 #include <adc.h>
-
+#include <dexdrip_packet.h>
+#include <inet.h>
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -229,10 +230,31 @@ uint32 getSrcValue(char srcVal) {
     }
     return i & 0xFF;
 }
-void print_packet(Dexcom_packet* pPkt) {
+
+void uart1_send_dexdrip_packet(dexdrip_binary_packet_t XDATA *pkt){
     uartEnable();
-    printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(0)));
+    uart1TxSend((uint8 XDATA *)pkt, 2);
+    uart1TxSend(pkt->payload, pkt->len);
     uartDisable();
+}
+
+void send_dexdrip_packet(uint8 packet_type, uint8 packet_len, uint8 XDATA *payload) {
+    dexdrip_binary_packet_t XDATA pkt;
+    pkt.packet_type = packet_type;
+    pkt.len = packet_len;
+    pkt.payload = payload;
+    uart1_send_dexdrip_packet(&pkt);
+}
+
+
+void send_data_packet(Dexcom_packet* pPkt) {
+    dexdrip_data_packet_t XDATA data;
+
+    data.raw = htonl(dex_num_decoder(pPkt->raw));
+    data.dexdrip_battery = htons(adcConvertToMillivolts(adcRead(0)));
+    data.dexcom_battery = pPkt->battery;
+
+    send_dexdrip_packet(DATA_PACKET, sizeof(dexdrip_data_packet_t), (uint8 XDATA*)&data);
 }
 
 void makeAllOutputs() {
@@ -480,7 +502,7 @@ void main() {
         boardService();
 
         if(get_packet(&Pkt)) {
-            print_packet(&Pkt);
+            send_data_packet(&Pkt);
         }
 
         RFST = 4;
