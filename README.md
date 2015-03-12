@@ -1,4 +1,4 @@
-DexDrip for Wixel
+xDrip for Wixel
 =================
 
 ### What is it?
