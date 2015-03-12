@@ -10,15 +10,15 @@ retransmitted through Bluetooth
 Its easy!
 * step 1: Clone the repo!
   * Using Git:
-    `git clone https://github.com/StephenBlackWasAlreadyTaken/wixel-DexDrip.git`
+    `git clone https://github.com/StephenBlackWasAlreadyTaken/wixel-xDrip.git`
   * Scared of Git?
     Download the
-    [ZIP](https://github.com/StephenBlackWasAlreadyTaken/wixel-DexDrip/archive/master.zip) and unpack it!
+    [ZIP](https://github.com/StephenBlackWasAlreadyTaken/wixel-xDrip/archive/master.zip) and unpack it!
 
 * step 2: Install the Wixel drivers and software
   * You can find them [here!](http://www.pololu.com/docs/0J46/3)
 
-* step 2.5: Modify the top section of the file `apps/dexdrip/dexdrip.c` to fit
+* step 2.5: Modify the top section of the file `apps/xdrip/xdrip.c` to fit
 your needs
   * Likely you will want to enter your actual transmitter id (Should only be numbers and **CAPITAL LETTERS** , and set
 `only_listen_to_my_transmitter` to 1.
@@ -45,22 +45,22 @@ wixel back into bootloader mode.
     * If you dont already have Command line tools installed it will ask you if you want to install them, just say yes and let it do its thing (note, on a mac version earlier than maverics, you will need to download xcode manually in order to install command line tools)
     * If successfull you should see a lot of lines that end something like 
    ```
-   Linking apps/dexdrip/dexdrip.hex
-   Packaging apps/dexdrip/dexdrip.wxl
+   Linking apps/xdrip/xdrip.hex
+   Packaging apps/xdrip/xdrip.wxl
    packihx: read 413 lines, wrote 779: OK.
    ```
   
   ##### ON WINDOWS
   * Install the wixel development bundle for windows from [here](http://www.pololu.com/file/0J526/wixel-dev-bundle-120127.exe) (you need this in addition to the drivers you downloaded in step 2!!)
   * Open a command prompt (should be under start menu -> programs -> accessories -> Command Prompt)
-  * Cd into the folder you downloaded this repo to (ex. `cd C:\Users\<computer name>\Desktop\wixel-DexDrip`)
+  * Cd into the folder you downloaded this repo to (ex. `cd C:\Users\<computer name>\Desktop\wixel-xDrip`)
   * now run `make_all.bat` by typing `make_all.bat` into the command prompt
   
 
   * You should see a lot of lines that end something like 
   ```
-  Linking apps/dexdrip/dexdrip.hex
-  Packaging apps/dexdrip/dexdrip.wxl
+  Linking apps/xdrip/xdrip.hex
+  Packaging apps/xdrip/xdrip.wxl
   packihx: read 413 lines, wrote 779: OK.
   ```
 * step 4: Load the app
@@ -94,7 +94,7 @@ And all the other awesome people that helped me out and contributed to awesome p
 
 
 # LINKS
-* [Project Site](http://stephenblackwasalreadytaken.github.io/DexDrip/)
-* [What you will need & Diagrams](https://github.com/StephenBlackWasAlreadyTaken/DexDrip/blob/gh-pages/hardware_setup.md)
-* [Wixel App](https://github.com/StephenBlackWasAlreadyTaken/wixel-DexDrip)
-* [Android App](https://github.com/StephenBlackWasAlreadyTaken/DexDrip)
+* [Project Site](http://stephenblackwasalreadytaken.github.io/xDrip/)
+* [What you will need & Diagrams](https://github.com/StephenBlackWasAlreadyTaken/xDrip/blob/gh-pages/hardware_setup.md)
+* [Wixel App](https://github.com/StephenBlackWasAlreadyTaken/wixel-xDrip)
+* [Android App](https://github.com/StephenBlackWasAlreadyTaken/xDrip)
