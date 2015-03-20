@@ -5,11 +5,16 @@ enum dexdrip_packet_type {
     DATA_PACKET = 1,
 };
 
+/*
+ * Keep this alligned and multiple of 4
+ */
+#define DATA_PACKET_VERSION 1
+
 typedef struct dexdrip_data_packet {
+    uint8 version;
+    uint8 dexcom_battery;
+    uint16 dexdrip_battery;
     uint32 raw;
-    int16  dexdrip_battery;
-    uint8  dexcom_battery;
-    uint8  padding[1];
 } dexdrip_data_packet_t;
 
 typedef struct dexdrip_binary_packet {

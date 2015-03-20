@@ -243,6 +243,7 @@ void send_dexdrip_packet(uint8 packet_type, uint8 packet_len, uint8 XDATA *paylo
     pkt.packet_type = packet_type;
     pkt.len = packet_len;
     pkt.payload = payload;
+    pkt.version = DATA_PACKET_VERSION;
     uart1_send_dexdrip_packet(&pkt);
 }
 
