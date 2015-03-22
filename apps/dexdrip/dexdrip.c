@@ -243,7 +243,6 @@ void send_dexdrip_packet(uint8 packet_type, uint8 packet_len, uint8 XDATA *paylo
     pkt.packet_type = packet_type;
     pkt.len = packet_len;
     pkt.payload = payload;
-    pkt.version = DATA_PACKET_VERSION;
     uart1_send_dexdrip_packet(&pkt);
 }
 
@@ -254,7 +253,7 @@ void send_data_packet(Dexcom_packet* pPkt) {
     data.raw = htonl(dex_num_decoder(pPkt->raw));
     data.dexdrip_battery = htons(adcConvertToMillivolts(adcRead(0)));
     data.dexcom_battery = pPkt->battery;
-
+    data.version = DATA_PACKET_VERSION;
     send_dexdrip_packet(DATA_PACKET, sizeof(dexdrip_data_packet_t), (uint8 XDATA*)&data);
 }
 
