@@ -60,11 +60,11 @@ radio_channel: See description in radio_link.h.
 //                                   1 = TRUE       0 = FALSE                                       //
 //                                                                                                  //
 //                                                                                                  //
-  static volatile uint8 wake_earlier_for_next_miss = 15;                                            //
+  static volatile uint8 wake_earlier_for_next_miss = 20;                                            //
 // if a packet is missed, wake this many seconds earlier to try and get the next one                //
 // shorter means better bettery life but more likely to miss multiple packets in a row              //
 //                                                                                                  //
-  static volatile uint8 misses_until_failure = 4;                                                   //
+  static volatile uint8 misses_until_failure = 2;                                                   //
 // after how many missed packets should we just start a nonstop scan?                               //
 // a high value is better for conserving batter life if you go out of wixel range a lot             //
 // but it could also mean missing packets for MUCH longer periods of time                           //
@@ -83,7 +83,7 @@ volatile uint32 dex_tx_id;
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
-static uint32 waitTimes[NUM_CHANNELS] = { 4500, 500, 500, 4500 };
+static uint32 waitTimes[NUM_CHANNELS] = { 13500, 500, 500, 500 };
 //Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
 static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 700, 700, 700 };
 static uint32 catch_offsets[NUM_CHANNELS] = { 0, 0, 0, 0 };
@@ -534,10 +534,10 @@ void main() {
         if(sequential_missed_packets > 0) {
             int first_square = sequential_missed_packets * sequential_missed_packets * wake_earlier_for_next_miss;
             int second_square = (sequential_missed_packets - 1) * (sequential_missed_packets - 1) * wake_earlier_for_next_miss;
-            int sleep_time = (280 - first_square + second_square);
+            int sleep_time = (268 - first_square + second_square);
             goToSleep(sleep_time);
         } else {
-            goToSleep(286);
+            goToSleep(283);
         }
         radioMacResume();
         MCSM1 = 0;
