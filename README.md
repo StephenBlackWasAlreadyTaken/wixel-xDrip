@@ -49,7 +49,11 @@ wixel back into bootloader mode.
    Packaging apps/xdrip/xdrip.wxl
    packihx: read 413 lines, wrote 779: OK.
    ```
-  
+    ##### ON UBUNTU-LINUX (14.04 or later, should also work on Debian Jessie or later)
+ * If you don't already have SDCC installed, open a terminal and run the command 'sudo apt-get install sdcc' and follow the instructions on screen (enter password, confirm with 'y', ...). (Not sure if installed?: run 'sdcc -v'. If the result is '/usr/bin/sdcc: No such file or directory', install it.)
+ * If it is installed, the version number returned on the command 'sdcc -v' should be at least 3.3.0
+ * From now on, you can follow the instructions for MAC starting from "Now back to our wixel app!".
+ 
   ##### ON WINDOWS
   * Install the wixel development bundle for windows from [here](http://www.pololu.com/file/0J526/wixel-dev-bundle-120127.exe) (you need this in addition to the drivers you downloaded in step 2!!)
   * Open a command prompt (should be under start menu -> programs -> accessories -> Command Prompt)
