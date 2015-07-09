@@ -49,6 +49,8 @@ radio_channel: See description in radio_link.h.
 // if status_lights = 1; the yellow light flashes while actively scanning                           //
 // if a light is flashing for more than 10 minutes straight, it may not be picking up your dex      //
 //                                                                                                  //
+  static volatile BIT allow_alternate_usb_protocol = 0;
+// if set to 1 and plugged in to USB then protocol output is suitable for dexterity and similar     //
 //                                                                                                  //
 //..................................................................................................//
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -227,7 +229,13 @@ uint32 getSrcValue(char srcVal) {
 }
 void print_packet(Dexcom_packet* pPkt) {
     uartEnable();
-    printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(0)));
+    if((allow_alternate_usb_protocol==0)||!usbPowerPresent()) {
+      // Classic 3 field protocol for serial/bluetooth only
+      printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(0)));
+    } else {
+      // Protocol suitable for dexterity android application or python script when running in USB mode
+      printf("%lu %lu %lu %hhu %d %hhu %d \r\n", pPkt->src_addr,dex_num_decoder(pPkt->raw),dex_num_decoder(pPkt->filtered)*2, pPkt->battery, getPacketRSSI(pPkt),pPkt->txId,adcConvertToMillivolts(adcRead(0)));
+    }
     uartDisable();
 }
 
