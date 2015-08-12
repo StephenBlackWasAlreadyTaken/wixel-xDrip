@@ -38,3 +38,7 @@ apps/*/*
 /libraries/src/spi_master/spi1_master.c
 
 /installer/build/
+
+apps/dexdrip/my_transmitter_id.h
+apps/*/*.c-*
+apps/*/*.h-*
