@@ -41,7 +41,7 @@ radio_channel: See description in radio_link.h.
 //                                   1 = TRUE       0 = FALSE                                       //
 //                                                                                                  //
 #ifndef CUSTOM_TRANSMITTER_ID
-#warning "Using built-in trasmitter id from dexdrip.c"
+#warning "Using built-in transmitter id from dexdrip.c"
 
   static XDATA const char transmitter_id[] = "ABCDE";                                               //
 
