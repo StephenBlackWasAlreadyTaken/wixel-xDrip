@@ -57,6 +57,27 @@ radio_channel: See description in radio_link.h.
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                                  //
+//                 Advanced Options, dont change unless you know what you are doing                 //
+//                                   1 = TRUE       0 = FALSE                                       //
+//                                                                                                  //
+//                                                                                                  //
+  static volatile uint8 wake_earlier_for_next_miss = 20;                                            //
+// if a packet is missed, wake this many seconds earlier to try and get the next one                //
+// shorter means better bettery life but more likely to miss multiple packets in a row              //
+//                                                                                                  //
+  static volatile uint8 misses_until_failure = 2;                                                   //
+// after how many missed packets should we just start a nonstop scan?                               //
+// a high value is better for conserving batter life if you go out of wixel range a lot             //
+// but it could also mean missing packets for MUCH longer periods of time                           //
+// a value of zero is best if you dont care at all about battery life                               //
+//                                                                                                  //
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+
 static XDATA volatile int start_channel = 0;
 uint32 XDATA asciiToDexcomSrc(char *addr);
 uint32 XDATA getSrcValue(char srcVal);
@@ -65,9 +86,11 @@ volatile uint32 dex_tx_id;
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static XDATA int8 defaultfOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
 static uint8 nChannels[NUM_CHANNELS] = { 0, 100, 199, 209 };
-static uint32 waitTimes[NUM_CHANNELS] = { 30000, 700, 700, 700 };
+static uint32 waitTimes[NUM_CHANNELS] = { 13500, 500, 500, 500 };
 //Now lets try to crank down the channel 1 wait time, if we can 5000 works but it wont catch channel 4 ever
 static uint32 delayedWaitTimes[NUM_CHANNELS] = { 0, 700, 700, 700 };
+static uint32 catch_offsets[NUM_CHANNELS] = { 0, 0, 0, 0 };
+static uint8 last_catch_channel = 0;
 BIT needsTimingCalibration = 1;
 BIT usbEnabled = 1;
 static uint8 save_IEN0;
@@ -75,6 +98,7 @@ static uint8 save_IEN1;
 static uint8 save_IEN2;
 unsigned char XDATA PM2_BUF[7] = {0x06,0x06,0x06,0x06,0x06,0x06,0x04};
 unsigned char XDATA dmaDesc[8] = {0x00,0x00,0xDF,0xBE,0x00,0x07,0x20,0x42};
+volatile uint8 sequential_missed_packets = 0;
 
 typedef struct _Dexcom_packet {
     uint8   len;
@@ -112,18 +136,18 @@ void switchToRCOSC(void) {
 
 void uartEnable() {
     U1UCR |= 0x40; //CTS/RTS ON
-    delayMs(1000);
+    delayMs(100);
 }
 
 void uartDisable() {
-    delayMs(1000);
+    delayMs(100);
     U1UCR &= ~0x40; //CTS/RTS Off
     U1CSR &= ~0x40; // Recevier disable
 }
 
 void blink_yellow_led() {
     if(status_lights) {
-        LED_YELLOW(((getMs()/500) % 2));//Blink half seconds
+        LED_YELLOW(((getMs()/250) % 2));//Blink quarter seconds
     }
 }
 
@@ -185,9 +209,9 @@ uint32 dex_num_decoder(uint16 usShortFloat) {
 }
 
 char XDATA SrcNameTable[32] = { '0', '1', '2', '3', '4', '5', '6', '7',
-                          '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
-                          'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P',
-                          'Q', 'R', 'S', 'T', 'U', 'W', 'X', 'Y' };
+                                '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
+                                'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P',
+                                'Q', 'R', 'S', 'T', 'U', 'W', 'X', 'Y' };
 
 void dexcom_src_to_ascii(uint32 src, char addr[6]) {
     addr[0] = SrcNameTable[(src >> 20) & 0x1F];
@@ -252,7 +276,7 @@ void makeAllOutputsLow() {
     }
 }
 
-void rest_offsets() {
+void reset_offsets() {
     int i;
     for(i=0; i<4; i++) {
         fOffset[i] = defaultfOffset[i];
@@ -264,107 +288,108 @@ void killWithWatchdog() {
     WDCTL = (WDCTL & ~0x04) | 0x08;
 }
 
-void goToSleep (uint32 seconds) {
+void goToSleep (int seconds) {
     adcSetMillivoltCalibration(adcReadVddMillivolts());
     makeAllOutputsLow();
 
-    if(!usbPowerPresent()){
-        unsigned char temp;
-        unsigned char storedDescHigh, storedDescLow;
-        BIT storedDma0Armed;
-        unsigned char storedIEN0, storedIEN1, storedIEN2;
+    if(!needsTimingCalibration) {
+        if(!usbPowerPresent()){
+            unsigned char temp;
+            unsigned char storedDescHigh, storedDescLow;
+            BIT storedDma0Armed;
+            unsigned char storedIEN0, storedIEN1, storedIEN2;
 
-        uint8 savedPICTL = PICTL;
-        BIT savedP0IE = P0IE;
-        uint8 savedP0SEL = P0SEL;
-        uint8 savedP0DIR = P0DIR;
-        uint8 savedP1SEL = P1SEL;
-        uint8 savedP1DIR = P1DIR;
+            uint8 savedPICTL = PICTL;
+            BIT savedP0IE = P0IE;
+            uint8 savedP0SEL = P0SEL;
+            uint8 savedP0DIR = P0DIR;
+            uint8 savedP1SEL = P1SEL;
+            uint8 savedP1DIR = P1DIR;
 
-        sleepInit();
+            sleepInit();
 
-        disableUsbPullup();
-        usbDeviceState = USB_STATE_DETACHED;
-        usbEnabled = 0;
-        SLEEP &= ~(1<<7);
+            disableUsbPullup();
+            usbDeviceState = USB_STATE_DETACHED;
+            usbEnabled = 0;
+            SLEEP &= ~(1<<7);
 
-        WORCTRL |= 0x03; // 2^5 periods
-        switchToRCOSC();
+            WORCTRL |= 0x03; // 2^5 periods
+            switchToRCOSC();
 
-        storedDescHigh = DMA0CFGH;
-        storedDescLow = DMA0CFGL;
-        storedDma0Armed = DMAARM & 0x01;
-        DMAARM |= 0x81;
-        dmaDesc[0] = ((unsigned int)& PM2_BUF) >> 8;
-        dmaDesc[1] = (unsigned int)& PM2_BUF;
+            storedDescHigh = DMA0CFGH;
+            storedDescLow = DMA0CFGL;
+            storedDma0Armed = DMAARM & 0x01;
+            DMAARM |= 0x81;
+            dmaDesc[0] = ((unsigned int)& PM2_BUF) >> 8;
+            dmaDesc[1] = (unsigned int)& PM2_BUF;
 
-        DMA0CFGH = ((unsigned int)&dmaDesc) >> 8;
-        DMA0CFGL = (unsigned int)&dmaDesc;
-        DMAARM = 0x01;
+            DMA0CFGH = ((unsigned int)&dmaDesc) >> 8;
+            DMA0CFGL = (unsigned int)&dmaDesc;
+            DMAARM = 0x01;
 
-        // save enabled interrupts
-        storedIEN0 = IEN0;
-        storedIEN1 = IEN1;
-        storedIEN2 = IEN2; 
+            // save enabled interrupts
+            storedIEN0 = IEN0;
+            storedIEN1 = IEN1;
+            storedIEN2 = IEN2;
 
-        //enable sleep timer interrupt
-        IEN0 |= 0xA0;
+            //enable sleep timer interrupt
+            IEN0 |= 0xA0;
 
-        //disable all interrupts except the sleep timer
-        IEN0 &= 0xA0;
-        IEN1 &= ~0x3F;
-        IEN2 &= ~0x3F;
+            //disable all interrupts except the sleep timer
+            IEN0 &= 0xA0;
+            IEN1 &= ~0x3F;
+            IEN2 &= ~0x3F;
 
-        WORCTRL |= 0x04;  // Reset
-        temp = WORTIME0;
-        while(temp == WORTIME0) {};
-        WOREVT1 = seconds >> 8;
-        WOREVT0 = seconds;
+            WORCTRL |= 0x04;  // Reset
+            temp = WORTIME0;
+            while(temp == WORTIME0) {};
+            WOREVT1 = seconds >> 8;
+            WOREVT0 = seconds;
 
-        temp = WORTIME0;
-        while(temp == WORTIME0) {};
+            temp = WORTIME0;
+            while(temp == WORTIME0) {};
 
-        MEMCTR |= 0x02;
-        SLEEP = 0x06;
-        __asm nop __endasm;
-        __asm nop __endasm;
-        __asm nop __endasm;
-        if(SLEEP & 0x03){
-            __asm mov 0xD7, #0x01 __endasm;
+            MEMCTR |= 0x02;
+            SLEEP = 0x06;
             __asm nop __endasm;
-            __asm orl 0x87, #0x01 __endasm;
             __asm nop __endasm;
-        }
-        IEN0 = storedIEN0;
-        IEN1 = storedIEN1;
-        IEN2 = storedIEN2;
-        DMA0CFGH = storedDescHigh;
-        DMA0CFGL = storedDescLow;
-        if(storedDma0Armed){
-            DMAARM |= 0x01;
-        }
-        // Switch back to high speed
-        boardClockInit();
+            __asm nop __endasm;
+            if(SLEEP & 0x03){
+                __asm mov 0xD7, #0x01 __endasm;
+                __asm nop __endasm;
+                __asm orl 0x87, #0x01 __endasm;
+                __asm nop __endasm;
+            }
+            IEN0 = storedIEN0;
+            IEN1 = storedIEN1;
+            IEN2 = storedIEN2;
+            DMA0CFGH = storedDescHigh;
+            DMA0CFGL = storedDescLow;
+            if(storedDma0Armed){
+                DMAARM |= 0x01;
+            }
+            // Switch back to high speed
+            boardClockInit();
 
-        PICTL = savedPICTL;
-        P0IE = savedP0IE;
-        P0SEL = savedP0SEL;
-        P0DIR = savedP0DIR;
-        P1SEL = savedP1SEL;
-        P1DIR = savedP1DIR;
-        USBPOW = 1;
-        USBCIE = 0b0111;
-    } else {
-        uint32 start_waiting = getMs();
-        if(!usbEnabled) {
-            usbDeviceState = USB_STATE_POWERED;
-            enableUsbPullup();
-            usbEnabled = 1;
-        }
-        delayMs(100);
-        while((getMs() - start_waiting) < (seconds * 1000)) {
-            delayMs(10);
-            doServices();
+            PICTL = savedPICTL;
+            P0IE = savedP0IE;
+            P0SEL = savedP0SEL;
+            P0DIR = savedP0DIR;
+            P1SEL = savedP1SEL;
+            P1DIR = savedP1DIR;
+            USBPOW = 1;
+            USBCIE = 0b0111;
+        } else {
+            uint32 start_waiting = getMs();
+            if(!usbEnabled) {
+                usbDeviceState = USB_STATE_POWERED;
+                enableUsbPullup();
+                usbEnabled = 1;
+            }
+            delayMs(100);
+            while((getMs() - start_waiting) < (seconds * 1000)) {
+                doServices();
+            }
         }
     }
     makeAllOutputs();
@@ -398,21 +423,21 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
     uint32 start = getMs();
     uint8 * packet = 0;
     uint32 i = 0;
-    uint32 seven_minutes = 420000;
+    uint32 six_minutes = 360000;
     int nRet = 0;
     swap_channel(nChannels[channel], fOffset[channel]);
 
     while (!milliseconds || (getMs() - start) < milliseconds) {
+        doServices();
+        blink_yellow_led();
         i++;
-        if(!(i % 60000)) {
+        if(!(i % 40000)) {
             strobe_radio(channel);
         }
-        doServices();
-        if((getMs() - start) > seven_minutes) {
+        if(getMs() - start > six_minutes) {
             killWithWatchdog();
             delayMs(2000);
         }
-        blink_yellow_led();
         if (packet = radioQueueRxCurrentPacket()) {
             uint8 len = packet[0];
             fOffset[channel] += FREQEST;
@@ -422,6 +447,7 @@ int WaitForPacket(uint16 milliseconds, Dexcom_packet* pkt, uint8 channel) {
                     pkt->txId -= channel;
                     radioQueueRxDoneWithPacket();
                     LED_YELLOW(0);
+                    last_catch_channel = channel;
                     return 1;
                 } else {
                     radioQueueRxDoneWithPacket();
@@ -441,7 +467,11 @@ uint32 delayFor(int wait_chan) {
     if(needsTimingCalibration) {
         return delayedWaitTimes[wait_chan];
     }
-    return waitTimes[wait_chan];
+    if(!wait_chan && sequential_missed_packets) {
+        return waitTimes[wait_chan] + (sequential_missed_packets * wake_earlier_for_next_miss * 2 * 1000);
+    } else {
+        return waitTimes[wait_chan];
+    }
 }
 
 BIT get_packet(Dexcom_packet* pPkt) {
@@ -450,14 +480,19 @@ BIT get_packet(Dexcom_packet* pPkt) {
         switch(WaitForPacket(delayFor(nChannel), pPkt, nChannel)) {
         case 1:
             needsTimingCalibration = 0;
+            sequential_missed_packets = 0;
             return 1;
         case 0:
             continue;
         }
     }
-    needsTimingCalibration = 1;
-    killWithWatchdog();
-    delayMs(2000);
+    sequential_missed_packets ++;
+    if(sequential_missed_packets > misses_until_failure) {
+        sequential_missed_packets = 0;
+        needsTimingCalibration = 1;
+    }
+    reset_offsets();
+    last_catch_channel = 0;
     return 0;
 }
 
@@ -467,7 +502,7 @@ void setADCInputs() {
 
 void configBt() {
     uartEnable();
-    printf("AT+NAMEDexDrip");
+    printf("AT+NAMExDrip");
     uartDisable();
 }
 
@@ -502,9 +537,18 @@ void main() {
         delayMs(100);
 
         radioMacSleep();
-        goToSleep(280); // Reduce this until we are just on the cusp of missing on the first channels
+        if(usbPowerPresent()){
+            sequential_missed_packets++;
+        }
+        if(sequential_missed_packets > 0) {
+            int first_square = sequential_missed_packets * sequential_missed_packets * wake_earlier_for_next_miss;
+            int second_square = (sequential_missed_packets - 1) * (sequential_missed_packets - 1) * wake_earlier_for_next_miss;
+            int sleep_time = (268 - first_square + second_square);
+            goToSleep(sleep_time);
+        } else {
+            goToSleep(283);
+        }
         radioMacResume();
-
         MCSM1 = 0;
         radioMacStrobe();
     }
