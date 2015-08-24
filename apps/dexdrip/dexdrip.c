@@ -60,7 +60,6 @@ radio_channel: See description in radio_link.h.
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                                  //
 //                 Advanced Options, dont change unless you know what you are doing                 //
-//                                   1 = TRUE       0 = FALSE                                       //
 //                                                                                                  //
 //                                                                                                  //
   static volatile uint8 wake_earlier_for_next_miss = 20;                                            //
