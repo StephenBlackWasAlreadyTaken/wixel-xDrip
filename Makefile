@@ -151,6 +151,15 @@ clean:
 	-@rm -fv $(CDBs)
 	-@rm -fv $(WXLs)
 
+#### JAMORHAM ADDITIONS ########################################################
+
+# Allow placing transmitter id in separate untracked file for developer privacy
+# and ease of upgrades.
+
+ifneq ("$(wildcard apps/dexdrip/my_transmitter_id.h)","")
+C_FLAGS += -DCUSTOM_TRANSMITTER_ID
+endif
+
 #### COMPLETE COMMANDS #########################################################
 
 ifdef VERBOSE

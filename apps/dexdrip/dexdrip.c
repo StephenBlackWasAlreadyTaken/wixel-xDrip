@@ -40,7 +40,16 @@ radio_channel: See description in radio_link.h.
 //                           SET THESE VARIABLES TO MEET YOUR NEEDS                                 //
 //                                   1 = TRUE       0 = FALSE                                       //
 //                                                                                                  //
+#ifndef CUSTOM_TRANSMITTER_ID
+#warning "Using built-in transmitter id from dexdrip.c"
+
   static XDATA const char transmitter_id[] = "ABCDE";                                               //
+
+#else
+
+#include "my_transmitter_id.h"
+
+#endif
 //                                                                                                  //
   static volatile BIT only_listen_for_my_transmitter = 1;                                           //
 // 1 is recommended                                                                                 //
@@ -49,7 +58,7 @@ radio_channel: See description in radio_link.h.
 // if status_lights = 1; the yellow light flashes while actively scanning                           //
 // if a light is flashing for more than 10 minutes straight, it may not be picking up your dex      //
 //                                                                                                  //
-  static volatile BIT allow_alternate_usb_protocol = 0;
+  static volatile BIT allow_alternate_usb_protocol = 1;
 // if set to 1 and plugged in to USB then protocol output is suitable for dexterity and similar     //
 //                                                                                                  //
 //..................................................................................................//
