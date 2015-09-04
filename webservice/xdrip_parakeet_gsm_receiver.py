@@ -46,7 +46,7 @@ if (os.getuid() == 0):
 web.config.debug = False
 
 
-urls = ('/request.cgi', 'entries',)
+urls = ('/receiver.cgi', 'entries',)
 
 # Output Template
 mydata = { "TransmitterId":"0","_id":1,"CaptureDateTime":0,"RelativeTime":0,"ReceivedSignalStrength":0,
