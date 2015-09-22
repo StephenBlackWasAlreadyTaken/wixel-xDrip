@@ -80,6 +80,7 @@ radio_channel: See description in radio_link.h.
 static XDATA volatile int start_channel = 0;
 uint32 XDATA asciiToDexcomSrc(char *addr);
 uint32 XDATA getSrcValue(char srcVal);
+void setADCInputs();
 volatile uint32 dex_tx_id;
 #define NUM_CHANNELS        (4)
 static int8 fOffset[NUM_CHANNELS] = {0xCE,0xD5,0xE6,0xE5};
@@ -392,6 +393,7 @@ void goToSleep (int seconds) {
         }
     }
     makeAllOutputs();
+    setADCInputs();
 }
 
 void putchar(char c) {
