@@ -1,6 +1,8 @@
 ##What is the Parakeet?
 The Parakeet is a portable home-built device which receives wireless signals from a commercial continuous glucose sensor worn on the body. It transmits these over the phone network to a private or cloud internet server.
 
+Powered by either AAA or AA rechargeable batteries as shown below.
+
 ![](https://github.com/jamorham/zz-misc-jamorham/blob/master/blob/images/parakeet-aaa-and-aa-boxed-small.jpg)
 
 ###What is the Parakeet for?
