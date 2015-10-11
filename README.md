@@ -14,6 +14,13 @@ Building the unit requires soldering the components together, locating them in a
 ###What makes this different to xDrip / Nightscout etc?
 The Parakeet builds on the existing xDrip system with very similar design goals to Nightscout. The difference with this device is that it does not need a CGM receiver or Smartphone to be with the child in order to function. This is especially important due to school policies which prohibit mobile phones in classrooms. Even where mobile phones are not prohibited, there are advantages to the unit being independent.
 
+###Additional features include:
+* A new ultra-lightweight network protocol designed to minimize cellular data usage and keep running costs low.
+* Configuration and status checking using standard text messaging. 
+* Optional geo-positioning feature allows location tracking and machine learning potential.   
+
+![](https://github.com/jamorham/zz-misc-jamorham/blob/master/blob/images/parakeet-r2-text-message-configure-818.png)
+
 ###Why is it called Parakeet?
 The parakeet name was chosen for this unit as it is fully mobile (can fly like a bird) plus it listens and repeats the glucose sensor information (like parakeet speech mimicry). Shorter unique “nicknames” make referencing technical items easier and reduce confusion. The pet animal concept can make it more emotionally appealing, especially to children. The segments on the wings in the logo are a representation of the Yagi antenna of the Wixel board and the GSM antenna.
 
