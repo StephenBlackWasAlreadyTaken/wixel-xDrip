@@ -1,7 +1,7 @@
 ##What is the Parakeet?
 The Parakeet is a portable home-built device which receives wireless signals from a commercial continuous glucose sensor worn on the body. It transmits these over the phone network to a private or cloud internet server.
 
-![](https://github.com/jamorham/zz-misc-jamorham/blob/master/blob/images/parakeetboxed-small.jpg)
+![](https://github.com/jamorham/zz-misc-jamorham/blob/master/blob/images/parakeet-aaa-and-aa-boxed-small.jpg)
 
 ###What is the Parakeet for?
 The Parakeet is primarily designed to allow parents and carers to be able to monitor the blood sugar of a diabetic child even if they are a long distance away, for example, carried in the pocket of a school bag. The real-time blood sugar information would be available on the parent’s mobile phone — potentially many miles away.
