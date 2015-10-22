@@ -811,9 +811,8 @@ min8 (uint8 a, uint8 b)
 
 void
 bit_reverse_bytes (uint8 * buf, uint8 nLen)
-__reentrant
 {
-    uint8 i = 0;
+    uint8 DATA i = 0;
     for (; i < nLen; i++)
     {
         buf[i] = bit_reverse_byte (buf[i]);
@@ -822,11 +821,10 @@ __reentrant
 
 uint32
 dex_num_decoder (uint16 usShortFloat)
-__reentrant
 {
-    static uint16 XDATA usReversed = usShortFloat;
-    static uint8 XDATA usExponent = 0;
-    static uint32 XDATA usMantissa = 0;
+    uint16 DATA usReversed = usShortFloat;
+    uint8 DATA usExponent = 0;
+    uint32 DATA usMantissa = 0;
     bit_reverse_bytes ((uint8 *) & usReversed, 2);
     usExponent = ((usReversed & 0xE000) >> 13);
     usMantissa = (usReversed & 0x1FFF);
