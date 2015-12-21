@@ -103,7 +103,7 @@ void gsm_uplink ();
 void usb_printf (const char *format, ...);
 void gsm_wake_serial ();
 int gsm_sleep_mode ();
-int gsm_send_sms(char *destination, char *message);
+int gsm_send_sms();
 void killWithWatchdog ();
 void loadSettingsFromFlash();
 
@@ -111,7 +111,7 @@ void loadSettingsFromFlash();
 void setADCInputs ();
 
 
-#define EOF -1
+#define myEOF -1
 #define CODE_HTTP_UPLINK 99
 #define CODE_BATTERY_STATUS 98
 #define CODE_UDP_UPLINK 97
@@ -119,6 +119,7 @@ void setADCInputs ();
 #define CODE_SMS_COMMAND 94
 #define CODE_APN_POPULATE 93
 #define CODE_UDP_POPULATE 92
+#define CODE_UDP_CHECK 91
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -134,12 +135,12 @@ void setADCInputs ();
 
 static CODE const char transmitter_id[] = "ABCDE";                                               //
 
-#define my_webservice_url	"my.example.com/receiver.cgi"
+#define my_webservice_url	"parakeet-receiver.appspot.com/receiver.cgi"
 #define my_webservice_reply     "!ACK"
 #define my_user_agent 		"xDrip"
 #define my_gprs_apn		"apn.check.your.carrier.info"
 
-#define my_udp_server_host	"127.0.0.1"
+#define my_udp_server_host	"disabled"
 #define my_udp_server_port	"12345"
 
 #define my_control_number       ""
@@ -214,6 +215,8 @@ static volatile BIT send_to_uart = 1;	// when doing usb printf - this is not a s
 static uint8 save_IEN0;
 static uint8 save_IEN1;
 static uint8 save_IEN2;
+
+static uint8 XDATA last_dex_battery = 0; 
 unsigned char XDATA PM2_BUF[7] = { 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x04 };
 unsigned char XDATA dmaDesc[8] =
 { 0x00, 0x00, 0xDF, 0xBE, 0x00, 0x07, 0x20, 0x42 };
@@ -229,12 +232,14 @@ static uint32 XDATA lasttime = 0;
 static uint32 XDATA general_timer = 0;
 volatile uint8 sequential_missed_packets = 0;
 static char XDATA lastLocation[30];
+static char XDATA messageBuffer[160];
 static char XDATA captureBuffer[250];
 static char XDATA composeBuffer[250];
 static char XDATA stringBuffer[250];
 static char XDATA minus[2]="-";
 
 static const char CODE error_string[] = "ERROR";
+static const char CODE termMessage[] = { 0x1a, 0x0a, 0x00 };
 
 static uint8  XDATA batteryPercent = 0;
 static uint8  XDATA batteryCharging;
@@ -252,7 +257,7 @@ static int8   XDATA latitudeMajor;
 typedef struct _parakeet_settings
 {
     uint32 dex_tx_id; 		//4 bytes
-    char http_url[40];
+    char http_url[56];
     char gsm_lock[16];
     char gsm_apn[32];
     char udp_server[28];
@@ -266,11 +271,11 @@ typedef struct _parakeet_settings
 } parakeet_settings;
 
 parakeet_settings XDATA settings;
-int XDATA loop;
+int XDATA loop; 
 unsigned XDATA char* flash_pointer;
 long unsigned int chk;
 
-#define FLASH_SETTINGS 			(0x7770)
+#define FLASH_SETTINGS 			(0x7760)
 
 #ifdef USE_SMS_CONTROL
 static XDATA char* sfind;
@@ -386,6 +391,7 @@ xdatstrstr (char XDATA *str1, char *str2)
 
 long
 strtol(char *nptr,char **endptr, int base)
+__reentrant
 {
 
     char *s = nptr;
@@ -558,7 +564,7 @@ int sscanf(char *str, char *fmt, ...)
 end_parse:
     va_end (ap);
 
-    if (*str_ptr == 0x0) gret = EOF;
+    if (*str_ptr == 0x0) gret = myEOF;
     return gret;
 }
 
@@ -675,7 +681,7 @@ void clearSettings()
 
 void loadSettingsFromFlash()
 {
-    memcpy(&settings, (__xdata *)FLASH_SETTINGS, sizeof(settings));
+    memcpy(&settings, (uint8 XDATA *)FLASH_SETTINGS, sizeof(settings));
 #ifdef DEBUG
     usb_printf("AFTER Setting txid: %lu\r\n",settings.dex_tx_id);
 #endif
@@ -937,7 +943,10 @@ print_packet (Dexcom_packet * pPkt)
 
     gsm_delay = getMs ();
     if (use_gsm)
+	{
+	last_dex_battery = pPkt->battery;
         gsm_uplink ();		// send data via gsm / gprs
+	}
     gsm_delay = (getMs () - gsm_delay) / 1000;
 
 
@@ -961,7 +970,7 @@ typedef struct _Serial_cmd
 
 
 #ifdef USE_SMS_CONTROL
-const Serial_cmd CODE sms_cmd[] =
+static const Serial_cmd CODE sms_cmd[] =
 {
     {"ATZ", "OK", 10},
     {"ATE0","OK", 2},
@@ -979,7 +988,7 @@ const Serial_cmd CODE sms_cmd[] =
 };
 #endif
 
-Serial_cmd *gsm_cmd = full_gsm_cmd;
+CODE Serial_cmd *gsm_cmd = full_gsm_cmd;
 
 const Serial_cmd CODE full_gsm_cmd[] =
 {
@@ -1010,7 +1019,7 @@ const Serial_cmd CODE full_gsm_cmd[] =
 #endif
 
 #ifdef USE_UDP_UPLINK
-
+    {"UDP_CHECK","",11,CODE_UDP_CHECK},
     {"AT+CIPSHUT","SHUT OK",5},
     {"AT+CGATT?","CGATT: 1",2},
     {"AT+CIPCSGP=1,\"%s\"","OK",2,CODE_APN_POPULATE},
@@ -1030,7 +1039,7 @@ const Serial_cmd CODE full_gsm_cmd[] =
     {"AT+HTTPINIT", "", 10},
     {"AT+HTTPPARA=\"CID\",1", "OK", 2},
     {
-        "AT+HTTPPARA=\"URL\",\"%s\"", "OK",
+        "AT+HTTPPARA=\"URL\",\"%s%s\"", "OK",
         2,CODE_HTTP_UPLINK
     },
     {"AT+HTTPPARA=\"UA\",\"" my_user_agent "\"", "OK", 2},
@@ -1047,8 +1056,8 @@ const Serial_cmd CODE full_gsm_cmd[] =
 void sendStatus()
 {
     dexcom_src_to_ascii ();
-    sprintf(stringBuffer,"STAT: id:%s batt:%d raw:%lu filt:%lu https://maps.google.com/?q=%s",dynamic_transmitter_id,batteryPercent,lastraw,lastfiltered,lastLocation);
-    gsm_send_sms(nfind,stringBuffer);
+    sprintf(messageBuffer,"STAT: id:%s batt:%d raw:%lu filt:%lu https://maps.google.com/?q=%s",dynamic_transmitter_id,batteryPercent,lastraw,lastfiltered,lastLocation);
+    gsm_send_sms();
 }
 
 int matchCommand(const char* command)
@@ -1067,45 +1076,43 @@ int matchCommand(const char* command)
 
 void sendAPN()
 {
-    sprintf(stringBuffer,"APN: '%s'",settings.gsm_apn);
-    gsm_send_sms(nfind,stringBuffer);
+    sprintf(messageBuffer,"APN: '%s'",settings.gsm_apn);
+    gsm_send_sms();
 }
 void sendLock()
 {
-    sprintf(stringBuffer,"Locked to number: '%s'",settings.gsm_lock);
-    gsm_send_sms(nfind,stringBuffer);
+    sprintf(messageBuffer,"Locked to number: '%s'",settings.gsm_lock);
+    gsm_send_sms();
 }
 void sendUDP()
 {
-    sprintf(stringBuffer,"UDP: '%s:%s'",settings.udp_server,settings.udp_port);
-    gsm_send_sms(nfind,stringBuffer);
+    sprintf(messageBuffer,"UDP: '%s:%s'",settings.udp_server,settings.udp_port);
+    gsm_send_sms();
 }
 void sendHTTP()
 {
-    sprintf(stringBuffer,"HTTP: '%s'",settings.http_url);
-    gsm_send_sms(nfind,stringBuffer);
+    sprintf(messageBuffer,"HTTP: '%s'",settings.http_url);
+    gsm_send_sms();
 }
 
 #endif
 
 
-
 int
 gsm_get_response (const char *response, int timeout, int getdata)
-__reentrant
 {
     BIT looking_for_ok = 0;
     char b = 0;
-    int ptr = 0;
     int rolling_ptr = 0;
-    int error_ptr = 0;
+    static int error_ptr = 0;
     int len = strlen (response);
     uint32 timeout_time = getMs () + ((uint32) timeout * 1000);
+    loop = 0; // move ptr to global
     if ((got_an_error == 0) && (strcmp("OK",response)==0))
     {
         looking_for_ok = 1;
     }
-    while ((ptr < len) && (getMs () < timeout_time))
+    while ((loop < len) && (getMs () < timeout_time))
     {
         if (uart1RxAvailable ())
         {
@@ -1121,13 +1128,13 @@ __reentrant
                     rolling_ptr--;
                 }
             }
-            if (response[ptr] == b)
+            if (response[loop] == b)
             {
-                ptr++;
+                loop++;
             }
             else
             {
-                ptr = 0;
+                loop = 0;
             }
             if (looking_for_ok)
             {
@@ -1157,7 +1164,7 @@ __reentrant
 
     }
 
-    if ((len > 0) && (ptr < len))
+    if ((len > 0) && (loop < len))
     {
         usb_printf ("Timedout on %s\r\n", response);
         return 0;
@@ -1222,7 +1229,8 @@ __reentrant
                                 }
                                 else
                                 {
-                                    gsm_send_sms(nfind,"Invalid Transmit command length");
+		                    sprintf(messageBuffer,"%s","Invalid Transmit command length");
+                                    gsm_send_sms();
                                 }
 
                             }
@@ -1304,8 +1312,8 @@ read_line_of_data:
 #ifdef DEBUG
             usb_printf ("Getting data reply\r\n");
 #endif
-            ptr=0;
-            while ((b != '\r') && (getMs () < timeout_time) && (ptr<sizeof(captureBuffer)))
+            loop=0;
+            while ((b != '\r') && (getMs () < timeout_time) && (loop<sizeof(captureBuffer)))
             {
                 if (uart1RxAvailable ())
                 {
@@ -1314,12 +1322,12 @@ read_line_of_data:
                         usbComTxSendByte (b);
                     if (b != '\r')
                     {
-                        captureBuffer[ptr]=b;
-                        ptr++;
+                        captureBuffer[loop]=b;
+                        loop++;
                     }
                     else
                     {
-                        captureBuffer[ptr]='\0';
+                        captureBuffer[loop]='\0';
 #ifdef DEBUG
                         usb_printf ("Got data reply %s\r\n",captureBuffer);
 #endif
@@ -1413,6 +1421,7 @@ gsm_send_command_getdata (const char *command, const char *response, int timeout
     char XDATA parambuf[256] = "";
     char* XDATA param = parambuf;
 
+    stringBuffer[0]=0; // clean up
 
 #ifdef USE_HTTP_UPLINK
 
@@ -1421,10 +1430,11 @@ gsm_send_command_getdata (const char *command, const char *response, int timeout
         // HTTP SEND
 
 #ifdef GET_BATTERY_STATUS
-        sprintf (param, "%s?rr=%lu&lv=%lu&lf=%lu&ts=%lu&bp=%d&bm=%d&ct=%d&gl=%s",settings.http_url, getMs (), lastraw,
-                 lastfiltered, (getMs () - lasttime), batteryPercent, batteryMillivolts, getCpuDegC(), lastLocation);
+	sprintf (param,"%s?rr=%lu&zi=%lu&pc=%s&lv=%lu&lf=%lu&db=%hhu",settings.http_url, getMs (), dex_tx_id, settings.udp_port, lastraw, lastfiltered,last_dex_battery);
+        sprintf (stringBuffer, "&ts=%lu&bp=%d&bm=%d&ct=%d&gl=%s", (getMs () - lasttime), batteryPercent, batteryMillivolts, getCpuDegC(), lastLocation);
 #else
-        sprintf (param, "%s?rr=%lu&lv=%lu&lf=%lu&ts=%lu&ct=%d&gl=%s", settings.http_url,getMs (), lastraw,
+        sprintf (param, "%s?rr=%lu&zi=%lu&pc=%s&lv=%lu", settings.http_url,getMs (), dex_tx_id, settings.udp_port lastraw,
+	sprintf (stringBuffer,"&lf=%lu&ts=%lu&ct=%d&gl=%s",
                  lastfiltered, (getMs () - lasttime), getCpuDegC(),lastLocation);
 #endif
         getdata=0;
@@ -1487,8 +1497,7 @@ gsm_send_command_getdata (const char *command, const char *response, int timeout
         sprintf (param, "%s\",\"%s", settings.udp_server,settings.udp_port);
         getdata=0;
     }
-
-    sprintf (buffer, command, param);	// fill in string
+    sprintf (buffer, command, param, stringBuffer);	// fill in string
 
     usb_printf ("GSM send command: %s / %s / %d\r\n", buffer, response,
                 timeout);
@@ -1507,13 +1516,13 @@ gsm_send_command (const char *command, const char *response, int timeout)
 }
 
 int
-gsm_send_sms(char *destination, char *message)
+gsm_send_sms()
 {
-    sprintf(composeBuffer,"AT+CMGS=\"%s\"" ,destination);
-    if (gsm_send_command(composeBuffer,">",3))
+    sprintf(composeBuffer,"AT+CMGS=\"%s\"" ,nfind);
+    if (gsm_send_command_getdata(composeBuffer,">",3,0))
     {
-        sprintf(composeBuffer,"%s%c" ,message,26);
-        return gsm_send_command(composeBuffer,"+CMGS:",10);
+	gsm_send_command(messageBuffer,"",2);
+	return gsm_send_command_getdata(termMessage,"+CGMS:",10,0);
     }
     else
     {
@@ -1737,7 +1746,6 @@ __reentrant
     uint32 start = getMs ();
     uint8 *packet = 0;
     uint32 i = 0;
-//    uint32 XDATA six_minutes = 360000;
 #define six_minutes 360000
     int nRet = 0;
     swap_channel (nChannels[channel], fOffset[channel]);
@@ -1796,7 +1804,6 @@ delayFor (int wait_chan)
     {
         return delayedWaitTimes[wait_chan];
     }
-    //return waitTimes[wait_chan];
     if (!wait_chan && sequential_missed_packets)
     {
         return waitTimes[wait_chan] +
@@ -1838,11 +1845,6 @@ get_packet (Dexcom_packet * pPkt)
     return 0;
 }
 
-//void
-//setADCInputs ()
-//{
-//    P0INP = 0;			//set pull resistors on pins 0_0 - 0_5 to low
-//}
 
 void flashingError(int XDATA howlong,int XDATA flashspeed)
 {
@@ -2040,8 +2042,25 @@ gsm_do_sequence ()
     gsm_wake_serial ();
     while (result)
     {
+
+#ifdef USE_UDP_UPLINK
+	// Skip UDP protocol if udp server starts with "disable"
+	if (gsm_cmd[i].getdata == CODE_UDP_CHECK)
+	{
+	usb_printf("Skipping UDP");
+	if (strncmp("disable",settings.udp_server,7)==0)
+	{
+	i=i+gsm_cmd[i].timeout;
+	} else {
+	i++;
+	}
+	}
+#endif
+
         if (gsm_cmd[i].timeout == 255)
             break;			// exit loop when on last cmd
+
+
         LED_RED (1);
         result =
             gsm_send_command_getdata (gsm_cmd[i].command, gsm_cmd[i].response,
@@ -2073,7 +2092,7 @@ gsm_do_sequence ()
 #ifdef DEBUG
             usb_printf("RETRYING LAST COMMAND\r\n");
 #endif
-            nicedelayMs(1000);
+            nicedelayMs(5000);
             got_an_error = 0;
             doing_retry = 1;
             result=1; // force retry
@@ -2095,6 +2114,7 @@ gsm_do_sequence ()
     else
     {
         usb_printf ("GSM Sequence FAILURE\r\n");
+	gsm_send_command ("AT&F", "OK", 2);
         gsm_sleep_mode ();
         LED_RED (1);
         LED_GREEN (0);
