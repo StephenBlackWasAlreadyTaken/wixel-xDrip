@@ -287,7 +287,7 @@ void killWithWatchdog() {
     WDCTL = (WDCTL & ~0x04) | 0x08;
 }
 
-void goToSleep (int seconds) {
+void goToSleep (uint32 seconds) {
     adcSetMillivoltCalibration(adcReadVddMillivolts());
     makeAllOutputsLow();
 
@@ -543,7 +543,9 @@ void main() {
             int first_square = sequential_missed_packets * sequential_missed_packets * wake_earlier_for_next_miss;
             int second_square = (sequential_missed_packets - 1) * (sequential_missed_packets - 1) * wake_earlier_for_next_miss;
             int sleep_time = (268 - first_square + second_square);
-            goToSleep(sleep_time);
+            if (sleep_time < 0)
+                sleep_time = 0;
+            goToSleep((uint32)sleep_time);
         } else {
             goToSleep(283);
         }
