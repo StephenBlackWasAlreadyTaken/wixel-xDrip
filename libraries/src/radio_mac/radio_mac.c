@@ -42,6 +42,7 @@ static void radioMacEvent(uint8 event);
 
 // Bits for sending commands to the MAC in an interrupt safe way.
 static volatile BIT strobe = 0;
+static volatile BIT sleepRadioMac = 0;
 
 // Error reporting
 volatile BIT radioRxOverflowOccurred = 0;
@@ -53,6 +54,8 @@ volatile BIT radioTxUnderflowOccurred = 0;
 #define RADIO_MAC_STATE_RX       2
 #define RADIO_MAC_STATE_TX       3
 volatile uint8 DATA radioMacState = RADIO_MAC_STATE_OFF;
+volatile uint8 DATA savedRadioMacState;
+volatile uint8 DATA savedWOREVT1;
 
 ISR(RF, 0)
 {
@@ -175,6 +178,15 @@ void radioMacEvent(uint8 event)
     MCSM2 = 0x07;                          // Default next timeout: infinite.
     radioMacEventHandler(event);
 
+    if (sleepRadioMac)
+    {
+        IEN2 &= ~0x01;    // Disable RF general interrupt
+        savedWOREVT1 = WOREVT1;
+    	savedRadioMacState = radioMacState;
+    	radioMacState = RADIO_MAC_STATE_IDLE;
+    	sleepRadioMac = 0;
+    }
+
     /** Clear the some flags from the radio ***********************************/
     // We want to do it before restarting the radio (to avoid accidentally missing
     // an event) but we want to do it as long as possible AFTER turning off the
@@ -192,6 +204,9 @@ void radioMacEvent(uint8 event)
         DMAARM |= (1<<DMA_CHANNEL_RADIO);   // Arm DMA channel.
         RFST = STX;                         // Switch radio to TX.
         break;
+    case RADIO_MAC_STATE_IDLE:
+    	RFST = SIDLE;
+    	break;
     }
 
     // Clear the strobe bit because we just ran the radioMacEventHandler.
@@ -202,6 +217,39 @@ void radioMacStrobe()
 {
     strobe = 1;
     S1CON |= 3;
+}
+
+void radioMacSleep()
+{
+	sleepRadioMac = 1;
+	radioMacStrobe();
+	while (strobe);
+}
+
+void radioMacResume()
+{
+	radioMacState = savedRadioMacState;
+
+	if (MCSM2 == 0x00)
+	{
+        WORCTRL = 0;
+		WOREVT1 = savedWOREVT1;
+        WOREVT0 = 0;
+	}
+
+    IEN2 |= 0x01;    // Enable RF general interrupt
+
+    switch(radioMacState)
+    {
+		case RADIO_MAC_STATE_RX:
+			DMAARM |= (1<<DMA_CHANNEL_RADIO);   // Arm DMA channel.
+			RFST = SRX;                         // Switch radio to RX.
+			break;
+		case RADIO_MAC_STATE_TX:
+			DMAARM |= (1<<DMA_CHANNEL_RADIO);   // Arm DMA channel.
+			RFST = STX;                         // Switch radio to TX.
+			break;
+    }
 }
 
 /** Initializes the radio_mac library.

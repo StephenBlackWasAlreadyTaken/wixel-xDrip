@@ -23,9 +23,6 @@
  * This function does not configure the PKTLEN, MCSM0, MCSM1, MCSM2, CHANNR,
  * or ADDR registers or the DMA:  That should be done by higher-level code.
  */
-typedef void (*pFnRadioRegistersInitFunc)(void);
-
-void setRadioRegistersInitFunc(pFnRadioRegistersInitFunc pFn);
 void radioRegistersInit();
 
 /*! \return The Link Quality Indicator (LQI) of the last packet received.
