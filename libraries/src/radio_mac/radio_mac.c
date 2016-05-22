@@ -145,7 +145,7 @@ ISR(RF, 0)
         // We were not reading data from the radio fast enough, so there was
         // a RX overflow.  This should not happen.  Report it as an error.
         radioRxOverflowOccurred = 1;
-        RFIF = ~0x40;
+        RFIF = (uint8)(~0x40);
 
         // The radio module is probably now in the RX_OVERFLOW state where it can not
         // receive packets.  The way to get out of this state is:
@@ -191,17 +191,17 @@ void radioMacEvent(uint8 event)
     // We want to do it before restarting the radio (to avoid accidentally missing
     // an event) but we want to do it as long as possible AFTER turning off the
     // radio.
-    RFIF = ~0x30;  // Clear IRQ_DONE and IRQ_TIMEOUT if they are set.
+    RFIF = (uint8)(~0x30);  // Clear IRQ_DONE and IRQ_TIMEOUT if they are set.
 
     /** Start up the radio in the new state which was decided above. **/
     switch(radioMacState)
     {
     case RADIO_MAC_STATE_RX:
-        DMAARM |= (1<<DMA_CHANNEL_RADIO);   // Arm DMA channel.
+        DMAARM = (1<<DMA_CHANNEL_RADIO);    // Arm DMA channel.
         RFST = SRX;                         // Switch radio to RX.
         break;
     case RADIO_MAC_STATE_TX:
-        DMAARM |= (1<<DMA_CHANNEL_RADIO);   // Arm DMA channel.
+        DMAARM = (1<<DMA_CHANNEL_RADIO);    // Arm DMA channel.
         RFST = STX;                         // Switch radio to TX.
         break;
     case RADIO_MAC_STATE_IDLE:
