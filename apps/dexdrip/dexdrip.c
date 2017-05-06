@@ -230,7 +230,7 @@ void doServices() {
 
 void initUart1() {
     uart1Init();
-    uart1SetBaudRate(9600);
+    uart1SetBaudRate(115200);
 }
 
 uint32 asciiToDexcomSrc(char addr[6]) {
