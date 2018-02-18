@@ -32,6 +32,7 @@ radio_channel: See description in radio_link.h.
 #include <ctype.h>
 #include <adc.h>
 
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -42,7 +43,7 @@ radio_channel: See description in radio_link.h.
 //                                                                                                  //
   static XDATA const char transmitter_id[] = "ABCDE";                                               //
 //                                                                                                  //
-  static volatile BIT only_listen_for_my_transmitter = 1;                                           //
+  static volatile BIT only_listen_for_my_transmitter = 0;                                           //
 // 1 is recommended                                                                                 //
 //                                                                                                  //
   static volatile BIT status_lights = 1;                                                            //
@@ -98,6 +99,7 @@ static uint8 save_IEN2;
 unsigned char XDATA PM2_BUF[7] = {0x06,0x06,0x06,0x06,0x06,0x06,0x04};
 unsigned char XDATA dmaDesc[8] = {0x00,0x00,0xDF,0xBE,0x00,0x07,0x20,0x42};
 volatile uint8 sequential_missed_packets = 0;
+uint32 cgmCount = 0;
 
 typedef struct _Dexcom_packet {
     uint8   len;
@@ -250,15 +252,25 @@ uint32 getSrcValue(char srcVal) {
     }
     return i & 0xFF;
 }
-void print_packet(Dexcom_packet* pPkt) {
+
+
+uint32 getCGMReading(){
+	
+	return 36298 + (cgmCount * 100);
+}
+void print_packet() {
     uartEnable();
-    if((allow_alternate_usb_protocol==0)||!usbPowerPresent()) {
+	
+	printf("%lu %hhu %d", dex_num_decoder(getCGMReading()), 500, adcConvertToMillivolts(adcRead(0)));
+	cgmCount++;
+	
+    //if((allow_alternate_usb_protocol==0)||!usbPowerPresent()) {
       // Classic 3 field protocol for serial/bluetooth only
-      printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(0)));
-    } else {
+      //printf("%lu %hhu %d", dex_num_decoder(pPkt->raw), pPkt->battery, adcConvertToMillivolts(adcRead(0)));
+    //} else {
       // Protocol suitable for dexterity android application or python script when running in USB mode
-      printf("%lu %lu %lu %hhu %d %hhu %d \r\n", pPkt->src_addr,dex_num_decoder(pPkt->raw),dex_num_decoder(pPkt->filtered)*2, pPkt->battery, getPacketRSSI(pPkt),pPkt->txId,adcConvertToMillivolts(adcRead(0)));
-    }
+    //  printf("%lu %lu %lu %hhu %d %hhu %d \r\n", pPkt->src_addr,dex_num_decoder(pPkt->raw),dex_num_decoder(pPkt->filtered)*2, pPkt->battery, getPacketRSSI(pPkt),pPkt->txId,adcConvertToMillivolts(adcRead(0)));
+    //}
     uartDisable();
 }
 
@@ -501,8 +513,25 @@ void setADCInputs() {
 
 void configBt() {
     uartEnable();
-    printf("AT+NAMExDrip");
+    printf("AT+NAMExDrip11");
     uartDisable();
+}
+
+void flashYellowLED(){
+	uint32 start = getMs();
+
+    while ((getMs() - start) < 10000) {
+        doServices();
+        blink_yellow_led();
+	}
+	LED_YELLOW(0);
+}
+
+void delay(){
+	uint32 start = getMs();
+
+    while ((getMs() - start) < 60000) {
+	}
 }
 
 void main() {
@@ -524,29 +553,40 @@ void main() {
     MCSM1 = 0;
 
     while(1) {
-        Dexcom_packet Pkt;
-        memset(&Pkt, 0, sizeof(Dexcom_packet));
+        //Dexcom_packet Pkt;
+        //memset(&Pkt, 0, sizeof(Dexcom_packet));
         boardService();
 
-        if(get_packet(&Pkt)) {
-            print_packet(&Pkt);
-        }
+		//Blink yellow light
+		flashYellowLED();
+		
+		doServices();
+		
+        //if(get_packet(&Pkt)) {
+            print_packet();
+		
+        //}
 
         RFST = 4;
         delayMs(100);
 
         radioMacSleep();
-        if(usbPowerPresent()){
-            sequential_missed_packets++;
-        }
-        if(sequential_missed_packets > 0) {
-            int first_square = sequential_missed_packets * sequential_missed_packets * wake_earlier_for_next_miss;
-            int second_square = (sequential_missed_packets - 1) * (sequential_missed_packets - 1) * wake_earlier_for_next_miss;
-            int sleep_time = (268 - first_square + second_square);
-            goToSleep(sleep_time);
-        } else {
-            goToSleep(283);
-        }
+		
+		delay();
+		//delayMs(90000);
+		//goToSleep(60);
+		
+        //if(usbPowerPresent()){
+        //    sequential_missed_packets++;
+        //}
+        //if(sequential_missed_packets > 0) {
+        //    int first_square = sequential_missed_packets * sequential_missed_packets * wake_earlier_for_next_miss;
+        //    int second_square = (sequential_missed_packets - 1) * (sequential_missed_packets - 1) * wake_earlier_for_next_miss;
+        //    int sleep_time = (268 - first_square + second_square);
+        //    goToSleep(sleep_time);
+        //} else {
+        //    goToSleep(283);
+        //}
         radioMacResume();
         MCSM1 = 0;
         radioMacStrobe();
